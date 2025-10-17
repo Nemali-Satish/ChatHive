@@ -1,0 +1,104 @@
+@import "tailwindcss";
+
+/* Global layout helpers */
+html, body, #root {
+  height: 100%;
+}
+
+/* Base light/dark backgrounds and typography */
+:root {
+  /* Default to light; dark overrides are applied when the html has .dark */
+  color-scheme: light;
+  --bg: #f9fafb; /* gray-50 */
+  --text: #0f172a; /* slate-900 */
+  --muted: #64748b; /* slate-500 */
+  --card: #ffffff;
+  --border: #e2e8f0; /* slate-200 */
+  --borderInput: #6c7177;
+  --primary: #4f46e5; /* indigo-600 */
+  --disabled:#90a1b9;
+}
+
+body {
+  margin: 0;
+  background-color: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* Apply dark tokens globally when the html element has the .dark class */
+html.dark {
+  color-scheme: dark;
+  --bg: #0b1020; /* custom dark */
+  --text: #e5e7eb; /* gray-200 */
+  --fieldText:#90a1b9;
+  --muted: #94a3b8; /* slate-400 */
+  --card: #0f172a; /* slate-900 */
+  --border: #334155; /* slate-700 */
+  --primary: #6366f1; /* indigo-500/600 */
+  --disabled:#606266;
+}
+
+html.dark body {
+  background-color: var(--bg);
+  color: var(--text);
+}
+
+/* Utility containers for app shell */
+.app-shell {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  min-height: 100%;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid rgba(0,0,0,0.06);
+  color: var(--text);
+}
+
+html.dark .app-header {
+  border-bottom-color: rgba(255,255,255,0.12);
+}
+
+.app-main {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  min-height: 0;
+}
+
+/* Collapse to single column on small screens; sidebar becomes drawer */
+@media (max-width: 767px) {
+  .app-main {
+    grid-template-columns: 1fr;
+  }
+}
+
+.sidebar {
+  border-right: 1px solid rgba(0,0,0,0.06);
+}
+
+html.dark .sidebar {
+  border-right-color: rgba(255,255,255,0.12);
+}
+
+/* Baseline elements so components look good across the app */
+a { color: #334155; }
+html.dark a { color: #a5b4fc; }
+a:hover { text-decoration: underline; }
+
+input, select, textarea {
+  background-color: var(--card);
+  color: var(--text);
+}
+input::placeholder, textarea::placeholder { color: var(--muted); }
+
+button.primary {
+  background-color: var(--primary);
+  color: white;
+}

@@ -1,119 +1,164 @@
-import { useReducer, useState } from 'react'
-import { useDispatch } from 'react-redux'
-import axios from 'axios'
-import { server } from '../constants/config'
-import { userExists } from '../redux/reducers/auth'
-import { useNavigate, Link } from 'react-router-dom'
-import toast from 'react-hot-toast'
-import { User2, Lock, Eye, EyeOff } from 'lucide-react'
-import Button from '../components/shared/Button'
-import Input from '../components/shared/Input'
-
-const Field = ({ label, icon: Icon, children, error }) => (
-  <label className="block">
-    <span className="text-sm  text-[color:var(--text)]">{label}</span>
-    <div className="mt-1 relative">
-      {Icon ? <Icon size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" /> : null}
-      {children}
-    </div>
-    {error ? <p className="mt-1 text-xs text-red-600">{error}</p> : null}
-  </label>
-)
+import React, { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { Mail, Lock, MessageCircle, User as UserIcon, Eye, EyeOff } from 'lucide-react';
+import toast from 'react-hot-toast';
+import Input from '../components/ui/Input';
+import Button from '../components/ui/Button';
+import ThemeToggle from '../components/ui/ThemeToggle';
+import { validateLoginForm } from '../utils/validation';
+import api from '../services/api';
+import { API_ENDPOINTS } from '../config/constants';
+import useAuthStore from '../store/useAuthStore';
 
 const Login = () => {
-  const [state, setState] = useReducer((s, a) => ({ ...s, ...a }), { username: '', password: '', submitting: false })
-  const [showPw, setShowPw] = useState(false)
-  const dispatch = useDispatch()
-  const navigate = useNavigate()
+  const navigate = useNavigate();
+  const setAuth = useAuthStore((state) => state.setAuth);
 
-  // Accept username OR email on login
-  const identifier = state.username.trim()
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-  const isEmail = emailRegex.test(identifier)
-  const usernameSanitized = identifier.toLowerCase()
-  const usernameValid = /^[a-z][a-z0-9_-]*$/.test(usernameSanitized)
+  const [formData, setFormData] = useState({
+    identifier: '',
+    password: '',
+  });
+  const [errors, setErrors] = useState({});
+  const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
-  const errors = {}
-  if (!identifier) errors.username = 'Enter username or email'
-  else if (!isEmail && !usernameValid) errors.username = 'Username must start with a letter; allowed: a-z, 0-9, - and _'
-  if (state.password.length < 1) errors.password = 'Password is required'
-  const canSubmit = Object.keys(errors).length === 0
-
-  const onSubmit = async () => {
-    if (!canSubmit) return
-    try {
-      setState({ submitting: true })
-      const payload = isEmail
-        ? { email: identifier.toLowerCase(), password: state.password }
-        : { username: usernameSanitized.toLowerCase(), password: state.password }
-      const { data } = await axios.post(`${server}/api/v1/user/login`, payload, { withCredentials: true })
-      dispatch(userExists(data.user))
-      toast.success('Welcome back')
-      navigate(data.user?.profileCompleted === false ? '/setup-profile' : '/')
-    } catch (err) {
-      toast.error(err?.response?.data?.message || 'Login failed')
-    } finally {
-      setState({ submitting: false })
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    if (name === 'identifier') {
+      // Lowercase if it's a username (no @)
+      const v = value.includes('@') ? value : value.toLowerCase();
+      setFormData({ ...formData, identifier: v });
+    } else {
+      setFormData({ ...formData, [name]: value });
     }
-  }
+    setErrors({ ...errors, [e.target.name]: '' });
+  };
+
+  const handleSubmit = async (e) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+
+    // Clear previous errors
+    setErrors({});
+
+    const { isValid, errors: validationErrors } = validateLoginForm(
+      formData.identifier,
+      formData.password
+    );
+
+    if (!isValid) {
+      setErrors(validationErrors);
+      toast.error('Please fill in all fields correctly');
+      return false;
+    }
+
+    setLoading(true);
+
+    try {
+      const response = await api.post(API_ENDPOINTS.LOGIN, {
+        identifier: formData.identifier,
+        password: formData.password,
+      });
+      const data = response.data;
+
+      if (data.success) {
+        setAuth(data.data, data.data.token);
+        toast.success('Login successful!');
+        const params = new URLSearchParams(window.location.search);
+        const next = params.get('next');
+        setTimeout(() => navigate(next || '/'), 100);
+      } else {
+        const errorMsg = data.message || 'Login failed';
+        toast.error(errorMsg);
+        setErrors({ general: errorMsg });
+      }
+    } catch (error) {
+      console.error('Login error:', error);
+      const errorMessage = error.response?.data?.message || error.message || 'Invalid credentials';
+      toast.error(errorMessage);
+      setErrors({ general: errorMessage });
+    } finally {
+      setLoading(false);
+    }
+
+    return false;
+  };
 
   return (
-    <div className="min-h-[80vh] grid place-items-center px-4">
-      <div className="w-full max-w-md border border-[color:var(--border)] rounded-2xl p-6 bg-[var(--card)] shadow-xl">
-        <h2 className="text-2xl font-semibold text-[color:var(--text)]">Welcome back</h2>
-        <p className="mt-1 text-sm text-[color:var(--muted)]">Login to continue to ChatHive.</p>
-
-        <div className="mt-6 grid gap-4">
-          <Field label="Username or Email" icon={User2} error={errors.username}>
-            <Input
-              value={state.username}
-              onChange={(e) => {
-                const raw = e.target.value
-                const looksLikeEmail = emailRegex.test(raw.trim())
-                const v = looksLikeEmail
-                  ? raw.trim().toLowerCase()
-                  : raw.toLowerCase().replace(/[^a-z0-9_-]/g, '').replace(/^[^a-z]+/, '')
-                setState({ username: v })
-              }}
-              className="pl-8 pr-3"
-              placeholder="your_name or you@example.com"
-              autoComplete="username"
-              inputMode="latin"
-              // Allow either email or username. Pattern helps but we rely on our JS validation too.
-              title="Enter username (lowercase, starts with a letter; a-z, 0-9, -, _) or a valid email"
-            />
-          </Field>
-
-          <Field label="Password" icon={Lock} error={errors.password}>
-            <Input
-              type={showPw ? 'text' : 'password'}
-              value={state.password}
-              onChange={(e) => setState({ password: e.target.value })}
-              className="pl-8 pr-10"
-              placeholder="••••••"
-              autoComplete="current-password"
-            />
-            <button
-              type="button"
-              onClick={() => setShowPw((p) => !p)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500"
-              aria-label="Toggle password visibility"
-            >
-              {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
-            </button>
-          </Field>
-
-          <Button onClick={onSubmit} disabled={!canSubmit} loading={state.submitting} className="mt-2 w-full">
-            Sign in
-          </Button>
+    <div className="relative min-h-screen flex items-center justify-center bg-app px-4">
+      <div className="absolute top-4 right-4">
+        <ThemeToggle />
+      </div>
+      <div className="max-w-md w-full bg-panel border border-default rounded-2xl shadow-xl p-8">
+        {/* Logo */}
+        <div className="flex justify-center mb-6">
+          <div className="bg-blue-600 dark:bg-blue-700 p-3 rounded-full">
+            <MessageCircle className="w-8 h-8 text-white" />
+          </div>
         </div>
 
-        <p className="mt-6 text-xs text-slate-600 dark:text-slate-400 text-center">
-          Don’t have an account? <Link to="/register" className="underline">Create one</Link>
+        {/* Title */}
+        <h2 className="text-3xl font-bold text-center text-primary mb-2">
+          Welcome Back
+        </h2>
+        <p className="text-center text-secondary mb-8">
+          Sign in to continue to ChatHive
+        </p>
+
+        {/* Error Message */}
+        {errors.general && (
+          <div className="mb-4 p-3 border rounded-lg" style={{ borderColor: '#fecaca', background: 'rgba(254, 202, 202, 0.2)' }}>
+            <p className="text-sm text-center" style={{ color: '#ef4444' }}>{errors.general}</p>
+          </div>
+        )}
+
+        {/* Form */}
+        <form onSubmit={handleSubmit} className="space-y-4" noValidate autoComplete="off">
+          <Input
+            label="Username or Email"
+            type="text"
+            name="identifier"
+            placeholder="Enter your username or email"
+            value={formData.identifier}
+            onChange={handleChange}
+            error={errors.identifier}
+            icon={UserIcon}
+          />
+
+          <Input
+            label="Password"
+            type={showPassword ? 'text' : 'password'}
+            name="password"
+            placeholder="Enter your password"
+            value={formData.password}
+            onChange={handleChange}
+            error={errors.password}
+            icon={Lock}
+            rightIcon={showPassword ? EyeOff : Eye}
+            onRightIconClick={() => setShowPassword((v) => !v)}
+          />
+
+          <Button
+            type="submit"
+            fullWidth
+            loading={loading}
+          >
+            Sign In
+          </Button>
+        </form>
+
+        {/* Register Link */}
+        <p className="mt-6 text-center text-gray-600 dark:text-[#8696a0]">
+          Don't have an account?{' '}
+          <Link to="/register" className="text-blue-600 hover:text-blue-700 font-semibold">
+            Sign Up
+          </Link>
         </p>
       </div>
     </div>
-  )
-}
+  );
+};
 
-export default Login
+export default Login;

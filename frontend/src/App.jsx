@@ -1,105 +1,56 @@
-import { Suspense, lazy, useEffect } from 'react'
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
-import { useDispatch, useSelector } from 'react-redux'
-import axios from 'axios'
-import { Toaster } from 'react-hot-toast'
-import { server } from './constants/config'
-import { userExists, userNotExists } from './redux/reducers/auth'
-import { SocketProvider } from './socket'
-import Header from './components/layout/Header'
-import { LayoutLoader } from './components/layout/Loaders'
-import ProtectRoute from './components/auth/ProtectRoute'
-import SocketEffects from './components/SocketEffects'
+import React from 'react';
+import { Routes, Route, Navigate } from 'react-router-dom';
+import Login from './pages/Login';
+import Register from './pages/Register';
+import Home from './pages/Home';
+import Settings from './pages/Settings';
+import ProtectedRoute from './components/ProtectedRoute';
+import useAuthStore from './store/useAuthStore';
+import { ThemeProvider } from './context/ThemeContext';
+import ProfileSetup from './pages/ProfileSetup';
 
-const Home = lazy(() => import('./pages/Home'))
-const Login = lazy(() => import('./pages/Login'))
-const Chat = lazy(() => import('./pages/Chat'))
-const Groups = lazy(() => import('./pages/Groups'))
-const NotFound = lazy(() => import('./pages/NotFound'))
-const Register = lazy(() => import('./pages/Register'))
-const ProfileSetup = lazy(() => import('./pages/ProfileSetup'))
-const Profile = lazy(() => import('./pages/Profile'))
-
-const AdminLogin = lazy(() => import('./pages/admin/AdminLogin'))
-const Dashboard = lazy(() => import('./pages/admin/Dashboard'))
-const UserManagement = lazy(() => import('./pages/admin/UserManagement'))
-const ChatManagement = lazy(() => import('./pages/admin/ChatManagement'))
-const MessageManagement = lazy(() => import('./pages/admin/MessageManagement'))
-
-function App() {
-  const dispatch = useDispatch()
-  const { user, loader } = useSelector((s) => s.auth)
-
-  useEffect(() => {
-    axios
-      .get(`${server}/api/v1/user/me`, { withCredentials: true })
-      .then(({ data }) => dispatch(userExists(data.user)))
-      .catch(() => dispatch(userNotExists()))
-  }, [dispatch])
-
-  if (loader) return <LayoutLoader />
-
+const App = () => {
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  
   return (
-    <BrowserRouter>
-      <div className="app-shell">
-        <Header />
-        <Suspense fallback={<LayoutLoader />}> 
-          <Routes>
-            <Route
-              element={
-                <SocketProvider>
-                  <ProtectRoute user={user} />
-                </SocketProvider>
-              }
-            >
-              <Route path="/" element={<Home />} />
-              <Route path="/chat/:chatId" element={<Chat />} />
-              <Route path="/groups" element={<Groups />} />
-              <Route path="/profile" element={<Profile />} />
-              {/* Socket listeners mounted within protected app */}
-              <Route path="*" element={<SocketEffects />} />
-            </Route>
+    <ThemeProvider>
+      <Routes>
+      <Route
+        path="/login"
+        element={isAuthenticated ? <Navigate to="/" replace /> : <Login />}
+      />
+      <Route
+        path="/register"
+        element={isAuthenticated ? <Navigate to="/" replace /> : <Register />}
+      />
+      <Route
+        path="/setup-profile"
+        element={
+          <ProtectedRoute>
+            <ProfileSetup />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/"
+        element={
+          <ProtectedRoute>
+            <Home />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/settings"
+        element={
+          <ProtectedRoute>
+            <Settings />
+          </ProtectedRoute>
+        }
+      />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+    </ThemeProvider>
+  );
+};
 
-            <Route
-              path="/login"
-              element={
-                <ProtectRoute user={!user} redirect="/">
-                  <Login />
-                </ProtectRoute>
-              }
-            />
-
-            <Route
-              path="/register"
-              element={
-                <ProtectRoute user={!user} redirect="/">
-                  <Register />
-                </ProtectRoute>
-              }
-            />
-
-            <Route
-              path="/setup-profile"
-              element={
-                <ProtectRoute user={user} requireComplete={false}>
-                  <ProfileSetup />
-                </ProtectRoute>
-              }
-            />
-
-            <Route path="/admin" element={<AdminLogin />} />
-            <Route path="/admin/dashboard" element={<Dashboard />} />
-            <Route path="/admin/users" element={<UserManagement />} />
-            <Route path="/admin/chats" element={<ChatManagement />} />
-            <Route path="/admin/messages" element={<MessageManagement />} />
-
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </Suspense>
-      </div>
-      <Toaster position="bottom-center" />
-    </BrowserRouter>
-  )
-}
-
-export default App
+export default App;

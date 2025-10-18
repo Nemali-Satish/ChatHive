@@ -4,16 +4,17 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>frontend</title>
+    <title>ChatHive - Real-time Messaging</title>
     <script>
-      try {
-        const stored = localStorage.getItem('theme')
-        const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
-        const theme = stored === 'light' || stored === 'dark' ? stored : (prefersDark ? 'dark' : 'light')
-        document.documentElement.classList.toggle('dark', theme === 'dark')
-      } catch (e) {
-        /* no-op if storage not available */
-      }
+      (function() {
+        try {
+          var saved = localStorage.getItem('theme');
+          var isDark = saved ? saved === 'dark' : window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+          var root = document.documentElement;
+          root.classList.remove('theme-dark','theme-light','dark');
+          root.classList.add(isDark ? 'theme-dark' : 'theme-light');
+        } catch (e) { /* no-op */ }
+      })();
     </script>
   </head>
   <body>

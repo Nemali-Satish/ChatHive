@@ -1,113 +1,219 @@
-import { useMemo, useReducer, useState } from 'react'
-import axios from 'axios'
-import { server } from '../constants/config'
-import { useNavigate, Link } from 'react-router-dom'
-import toast from 'react-hot-toast'
-import { useDispatch } from 'react-redux'
-import { userExists } from '../redux/reducers/auth'
-import { User2, Mail, Lock, Eye, EyeOff, AtSign } from 'lucide-react'
-import Button from '../components/shared/Button'
-import Input from '../components/shared/Input'
-
-const Field = ({ label, icon: Icon, children, error }) => (
-  <label className="block">
-    <span className="text-sm  text-[color:var(--text)]">{label}</span>
-    <div className="mt-1 relative">
-      {Icon ? <Icon size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" /> : null}
-      {children}
-    </div>
-    {error ? <p className="mt-1 text-xs text-red-600">{error}</p> : null}
-  </label>
-)
+import React, { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { Mail, Lock, User, MessageCircle, User as UserIcon, Eye, EyeOff } from 'lucide-react';
+import toast from 'react-hot-toast';
+import Input from '../components/ui/Input';
+import Button from '../components/ui/Button';
+import ThemeToggle from '../components/ui/ThemeToggle';
+import { validateRegisterForm } from '../utils/validation';
+import api from '../services/api';
+import { API_ENDPOINTS } from '../config/constants';
+import useAuthStore from '../store/useAuthStore';
 
 const Register = () => {
-  const [state, dispatch] = useReducer(
-    (s, a) => ({ ...s, ...a }),
-    { username: '', name: '', email: '', password: '', confirm: '', submitting: false }
-  )
-  const navigate = useNavigate()
-  const rdispatch = useDispatch()
-  const [showPw, setShowPw] = useState(false)
-  const [showConfirm, setShowConfirm] = useState(false)
+  const navigate = useNavigate();
+  const setAuth = useAuthStore((state) => state.setAuth);
 
-  const errors = useMemo(() => {
-    const e = {}
-    const uname = state.username.toLowerCase()
-    if (!state.username.trim()) e.username = 'Username is required'
-    else if (!/^[a-z0-9_-]+$/.test(uname)) e.username = 'Only lowercase letters, digits, - and _ allowed'
-    if (!state.name.trim()) e.name = 'Name is required'
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(state.email)) e.email = 'Valid email required'
-    if (state.password.length < 6) e.password = 'Min 6 characters'
-    if (state.password !== state.confirm) e.confirm = 'Passwords do not match'
-    return e
-  }, [state.username, state.name, state.email, state.password, state.confirm])
+  const [formData, setFormData] = useState({
+    firstName: '',
+    lastName: '',
+    username: '',
+    email: '',
+    password: '',
+    confirmPassword: '',
+  });
+  const [errors, setErrors] = useState({});
+  const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
 
-  const canSubmit = Object.keys(errors).length === 0
-
-  const handleSubmit = async () => {
-    dispatch({ submitting: true })
-    try {
-      const { data } = await axios.post(
-        `${server}/api/v1/user/register`,
-        { username: state.username.toLowerCase(), name: state.name, email: state.email, password: state.password },
-        { withCredentials: true }
-      )
-      toast.success('Account created')
-      // store user (profileCompleted=false) and go to setup
-      rdispatch(userExists(data.user))
-      navigate('/setup-profile')
-    } catch (err) {
-      toast.error(err?.response?.data?.message || 'Registration failed')
-    } finally {
-      dispatch({ submitting: false })
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    if (name === 'username') {
+      setFormData({ ...formData, username: value.toLowerCase() });
+    } else {
+      setFormData({ ...formData, [name]: value });
     }
-  }
+    setErrors({ ...errors, [e.target.name]: '' });
+  };
+
+  const handleSubmit = async (e) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+
+    // Clear previous errors
+    setErrors({});
+
+    const { isValid, errors: validationErrors } = validateRegisterForm(
+      formData.firstName,
+      formData.lastName,
+      formData.username,
+      formData.email,
+      formData.password,
+      formData.confirmPassword
+    );
+
+    if (!isValid) {
+      setErrors(validationErrors);
+      toast.error('Please fill in all fields correctly');
+      return false;
+    }
+
+    setLoading(true);
+
+    try {
+      const response = await api.post(API_ENDPOINTS.REGISTER, {
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        username: formData.username,
+        email: formData.email,
+        password: formData.password,
+      });
+      const data = response.data;
+
+      if (data.success) {
+        setAuth(data.data, data.data.token);
+        toast.success('Registration successful!');
+        setTimeout(() => navigate('/'), 100);
+      } else {
+        const errorMsg = data.message || 'Registration failed';
+        toast.error(errorMsg);
+        setErrors({ general: errorMsg });
+      }
+    } catch (error) {
+      console.error('Registration error:', error);
+      const errorMessage = error.response?.data?.message || error.message || 'Registration failed. Please try again.';
+      toast.error(errorMessage);
+      setErrors({ general: errorMessage });
+    } finally {
+      setLoading(false);
+    }
+
+    return false;
+  };
 
   return (
-    <div className="min-h-[80vh] grid place-items-center p-4">
-      <div className="w-full max-w-xl border border-[color:var(--border)] rounded-2xl bg-[var(--card)] shadow-xl p-6">
-        <h1 className="text-2xl font-semibold text-[color:var(--text)]">Create your account</h1>
-
-        <div className="mt-6 grid gap-4">
-          <Field label="Full name" icon={User2} error={errors.name}>
-            <Input value={state.name} onChange={(e) => dispatch({ name: e.target.value })} className="pl-8 pr-3" placeholder="John Doe" />
-          </Field>
-          <Field label="Username" icon={AtSign} error={errors.username}>
-            <Input value={state.username}
-              onChange={(e) => dispatch({ username: e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, '') })}
-              className="pl-8 pr-3"
-              placeholder="your_name" inputMode="latin" pattern="[a-z0-9_-]+" title="Only lowercase letters, digits, hyphen and underscore are allowed" />
-          </Field>
-          <Field label="Email" icon={Mail} error={errors.email}>
-            <Input type="email" value={state.email} onChange={(e) => dispatch({ email: e.target.value })} className="pl-8 pr-3" placeholder="you@example.com" />
-          </Field>
-
-          <Field label="Password" icon={Lock} error={errors.password}>
-            <Input type={showPw ? 'text' : 'password'} value={state.password} onChange={(e) => dispatch({ password: e.target.value })} className="pl-8 pr-10" placeholder="Password" />
-            <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500" onClick={() => setShowPw((p) => !p)} aria-label="Toggle password">
-              {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
-            </button>
-          </Field>
-          <Field label="Confirm password" icon={Lock} error={errors.confirm}>
-            <Input type={showConfirm ? 'text' : 'password'} value={state.confirm} onChange={(e) => dispatch({ confirm: e.target.value })} className="pl-8 pr-10" placeholder="confirm Password" />
-            <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500" onClick={() => setShowConfirm((p) => !p)} aria-label="Toggle confirm password">
-              {showConfirm ? <EyeOff size={16} /> : <Eye size={16} />}
-            </button>
-          </Field>
+    <div className="relative min-h-screen flex items-center justify-center bg-app px-4 py-8">
+      <div className="absolute top-4 right-4">
+        <ThemeToggle />
+      </div>
+      <div className="max-w-md w-full bg-panel border border-default rounded-2xl shadow-xl p-8">
+        {/* Logo */}
+        <div className="flex justify-center mb-6">
+          <div className="bg-blue-600 p-3 rounded-full">
+            <MessageCircle className="w-8 h-8 text-white" />
+          </div>
         </div>
 
-        <div className="mt-6 flex items-center justify-between text-xs text-slate-600 dark:text-slate-400">
-          <Link to="/login" className="underline">Have an account? Sign in</Link>
-        </div>
+        {/* Title */}
+        <h2 className="text-3xl font-bold text-center text-primary mb-2">
+          Create Account
+        </h2>
+        <p className="text-center text-secondary mb-8">
+          Sign up to get started with ChatHive
+        </p>
 
-        <div className="mt-4 flex justify-end">
-          <Button type="button" onClick={handleSubmit} disabled={!canSubmit} loading={state.submitting}>
-            Create account
+        {/* Error Message */}
+        {errors.general && (
+          <div className="mb-4 p-3 border rounded-lg" style={{ borderColor: '#fecaca', background: 'rgba(254, 202, 202, 0.2)' }}>
+            <p className="text-sm text-center" style={{ color: '#ef4444' }}>{errors.general}</p>
+          </div>
+        )}
+
+        {/* Form */}
+        <form onSubmit={handleSubmit} className="space-y-4" noValidate autoComplete="off">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Input
+              label="First Name"
+              type="text"
+              name="firstName"
+              placeholder="John"
+              value={formData.firstName}
+              onChange={handleChange}
+              error={errors.firstName}
+              icon={UserIcon}
+            />
+            <Input
+              label="Last Name"
+              type="text"
+              name="lastName"
+              placeholder="Doe"
+              value={formData.lastName}
+              onChange={handleChange}
+              error={errors.lastName}
+              icon={UserIcon}
+            />
+          </div>
+
+          <Input
+            label="Username"
+            type="text"
+            name="username"
+            placeholder="must start with a letter, a-z0-9_-"
+            value={formData.username}
+            onChange={handleChange}
+            error={errors.username}
+            icon={User}
+          />
+
+          <Input
+            label="Email"
+            type="email"
+            name="email"
+            placeholder="Enter your email"
+            value={formData.email}
+            onChange={handleChange}
+            error={errors.email}
+            icon={Mail}
+          />
+
+          <Input
+            label="Password"
+            type={showPassword ? 'text' : 'password'}
+            name="password"
+            placeholder="Enter your password"
+            value={formData.password}
+            onChange={handleChange}
+            error={errors.password}
+            icon={Lock}
+            rightIcon={showPassword ? EyeOff : Eye}
+            onRightIconClick={() => setShowPassword((v) => !v)}
+          />
+
+          <Input
+            label="Confirm Password"
+            type={showConfirm ? 'text' : 'password'}
+            name="confirmPassword"
+            placeholder="Confirm your password"
+            value={formData.confirmPassword}
+            onChange={handleChange}
+            error={errors.confirmPassword}
+            icon={Lock}
+            rightIcon={showConfirm ? EyeOff : Eye}
+            onRightIconClick={() => setShowConfirm((v) => !v)}
+          />
+
+          <Button
+            type="submit"
+            fullWidth
+            loading={loading}
+          >
+            Sign Up
           </Button>
-        </div>
+        </form>
+
+        {/* Login Link */}
+        <p className="mt-6 text-center text-gray-600 dark:text-[#8696a0]">
+          Already have an account?{' '}
+          <Link to="/login" className="text-blue-600 hover:text-blue-700 font-semibold">
+            Sign In
+          </Link>
+        </p>
       </div>
     </div>
-  )
-}
+  );
+};
 
-export default Register
+export default Register;

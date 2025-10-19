@@ -30,6 +30,12 @@ export const API_ENDPOINTS = {
   ADD_TO_GROUP: '/api/chats/group/add',
   REMOVE_FROM_GROUP: '/api/chats/group/remove',
   UPDATE_GROUP_AVATAR: '/api/chats/group/avatar',
+  GROUP_MUTE: '/api/chats/group/mute',
+  GROUP_LEAVE: '/api/chats/group/leave',
+  GROUP_ADMIN_ADD: '/api/chats/group/admin/add',
+  GROUP_ADMIN_REMOVE: '/api/chats/group/admin/remove',
+  GROUP_INFO_UPDATE: '/api/chats/group/info',
+  GROUP_DELETE_ALL: (chatId) => `/api/chats/group/${chatId}/all`,
   
   // Messages
   SEND_MESSAGE: '/api/messages',
@@ -55,4 +61,6 @@ export const SOCKET_EVENTS = {
   MESSAGE_RECEIVED: 'message received',
   USER_BLOCKED: 'user blocked',
   USER_UNBLOCKED: 'user unblocked',
+  GROUP_NOTIFICATION: 'group notification',
+  GROUP_UPDATED: 'group updated',
 };

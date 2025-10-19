@@ -12,6 +12,8 @@ export const SOCKET_EVENTS = {
   MESSAGE_RECEIVED: 'message received',
   USER_BLOCKED: 'user blocked',
   USER_UNBLOCKED: 'user unblocked',
+  GROUP_NOTIFICATION: 'group notification',
+  GROUP_UPDATED: 'group updated',
 };
 
 export default SOCKET_EVENTS;

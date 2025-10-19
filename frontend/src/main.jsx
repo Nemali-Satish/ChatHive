@@ -4,11 +4,14 @@ import { BrowserRouter } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import App from './App.jsx';
 import './index.css';
+import { ConfirmProvider } from './context/ConfirmProvider.jsx';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <BrowserRouter>
-      <App />
+      <ConfirmProvider>
+        <App />
+      </ConfirmProvider>
       <Toaster
         position="top-right"
         toastOptions={{

@@ -13,6 +13,7 @@ import toast from 'react-hot-toast';
 import { initializeSocket, getSocket } from '../../services/socket';
 import { SOCKET_EVENTS } from '../../config/constants';
 import { useTheme } from '../../context/ThemeContext';
+import { useConfirmModal } from '../../context/ConfirmProvider';
 
 const Sidebar = () => {
   const navigate = useNavigate();
@@ -31,6 +32,7 @@ const Sidebar = () => {
   const menuRef = useRef(null);
   const { selectedChat } = useChatStore();
   const selectedChatIdRef = useRef(null);
+  const confirmModal = useConfirmModal();
   useEffect(() => {
     selectedChatIdRef.current = selectedChat?._id || null;
   }, [selectedChat?._id]);
@@ -204,38 +206,60 @@ const Sidebar = () => {
   };
 
   const handleRemoveFriend = async (userId) => {
-    try {
-      const { data } = await api.delete(API_ENDPOINTS.REMOVE_FRIEND(userId));
-      if (data.success) {
-        setFriends(friends.filter(f => f._id !== userId));
-        toast.success('Friend removed');
-      }
-    } catch (error) {
-      toast.error('Failed to remove friend');
-    }
+    const friend = friends.find(f => f._id === userId);
+    const label = friend?.name || friend?.email || 'this user';
+    confirmModal({
+      action: 'friend.remove',
+      title: `Remove ${label}?`,
+      description: `You will remove ${label} from your friends.`,
+      variant: 'danger',
+      confirmLabel: 'Remove',
+      onConfirm: async () => {
+        const { data } = await api.delete(API_ENDPOINTS.REMOVE_FRIEND(userId));
+        if (data.success) {
+          setFriends(friends.filter(f => f._id !== userId));
+          toast.success('Friend removed');
+        }
+      },
+      meta: { userId }
+    });
   };
 
   const handleUnblock = async (userId) => {
-    try {
-      const { data } = await api.delete(API_ENDPOINTS.UNBLOCK_USER(userId));
-      if (data.success) {
-        setBlockedUsers(blockedUsers.filter(u => u._id !== userId));
-        toast.success('User unblocked');
-      }
-    } catch (error) {
-      toast.error('Failed to unblock user');
-    }
+    const userObj = blockedUsers.find(u => u._id === userId);
+    const label = userObj?.name || userObj?.email || 'this user';
+    confirmModal({
+      action: 'user.unblock',
+      title: `Unblock ${label}?`,
+      description: 'You will be able to exchange messages again.',
+      variant: 'primary',
+      confirmLabel: 'Unblock',
+      onConfirm: async () => {
+        const { data } = await api.delete(API_ENDPOINTS.UNBLOCK_USER(userId));
+        if (data.success) {
+          setBlockedUsers(blockedUsers.filter(u => u._id !== userId));
+          toast.success('User unblocked');
+        }
+      },
+      meta: { userId }
+    });
   };
 
   const handleLogout = async () => {
-    try {
-      await api.post(API_ENDPOINTS.LOGOUT);
-      disconnectSocket();
-      logout();
-      toast.success('Logged out successfully');
-    } catch (error) {
-      toast.error('Logout failed');
-    }
+    confirmModal({
+      action: 'auth.logout',
+      title: 'Logout?',
+      description: 'You will be signed out of ChatHive on this device.',
+      variant: 'danger',
+      confirmLabel: 'Logout',
+      onConfirm: async () => {
+        await api.post(API_ENDPOINTS.LOGOUT);
+        disconnectSocket();
+        logout();
+        toast.success('Logged out successfully');
+        navigate('/login');
+      }
+    });
   };
 
   const filteredChats = chats.filter((chat) => {

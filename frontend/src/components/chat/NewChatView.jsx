@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Search, Users, MessageCircle } from 'lucide-react';
 import Avatar from '../ui/Avatar';
+import GroupCreateModal from './GroupCreateModal';
 import api from '../../services/api';
 import { API_ENDPOINTS } from '../../config/constants';
 import toast from 'react-hot-toast';
@@ -13,6 +14,7 @@ export default function NewChatView({ onBack, chats = [], showHeader = true }) {
   const [loading, setLoading] = useState(false);
   const [creatingChat, setCreatingChat] = useState(null);
   const [showNewChatSearch, setShowNewChatSearch] = useState(false);
+  const [showGroupModal, setShowGroupModal] = useState(false);
   const { setSelectedChat, addChat } = useChatStore();
   const user = useAuthStore((state) => state.user);
 
@@ -113,7 +115,10 @@ export default function NewChatView({ onBack, chats = [], showHeader = true }) {
 
       {!searchQuery && !showNewChatSearch && (
         <div className="border-b border-default">
-          <button className="w-full flex items-center gap-3 p-3 hover-surface transition-colors">
+          <button
+            onClick={() => setShowGroupModal(true)}
+            className="w-full flex items-center gap-3 p-3 hover-surface transition-colors"
+          >
             <div className="w-10 h-10 rounded-full flex items-center justify-center shadow-md" style={{ background: '#22c55e' }}>
               <Users className="w-5 h-5 text-white" />
             </div>
@@ -216,6 +221,9 @@ export default function NewChatView({ onBack, chats = [], showHeader = true }) {
           </div>
         ) : null}
       </div>
+      {showGroupModal && (
+        <GroupCreateModal open={showGroupModal} onClose={() => setShowGroupModal(false)} />
+      )}
     </div>
   );
 }

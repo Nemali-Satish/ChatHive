@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Sidebar from '../components/chat/Sidebar';
 import ChatWindow from '../components/chat/ChatWindow';
+import ChatInfoPanel from '../components/chat/ChatInfoPanel';
 import useAuthStore from '../store/useAuthStore';
 import useChatStore from '../store/useChatStore';
 import { getSocket } from '../services/socket';
@@ -11,6 +12,7 @@ const Home = () => {
   const navigate = useNavigate();
   const user = useAuthStore((state) => state.user);
   const selectedChat = useChatStore((state) => state.selectedChat);
+  const infoPanelOpen = useChatStore((state) => state.infoPanelOpen);
   const addMessage = useChatStore((state) => state.addMessage);
   const addOnlineUser = useChatStore((state) => state.addOnlineUser);
   const removeOnlineUser = useChatStore((state) => state.removeOnlineUser);
@@ -69,14 +71,26 @@ const Home = () => {
 
   return (
     <div className="flex h-screen bg-app overflow-hidden">
-      {/* Sidebar - Show on mobile only when no chat selected */}
-      <div className={`${selectedChat ? 'hidden md:flex' : 'flex'} w-full md:w-auto`}>
+      {/* Left Sidebar */}
+      {/* sm: only when no chat and no info panel; md+: always visible */}
+      <div className={`${(!selectedChat && !infoPanelOpen) ? 'flex' : 'hidden'} md:flex w-full md:w-[320px] lg:w-auto`}>
         <Sidebar />
       </div>
-      
-      {/* Chat Window - Show on mobile only when chat selected */}
-      <div className={`${selectedChat ? 'flex' : 'hidden md:flex'} flex-1 w-full`}>
+
+      {/* Chat Window */}
+      {/* sm: show when chat selected and no info panel; md: same; lg+: always visible as middle pane */}
+      <div className={`${selectedChat && !infoPanelOpen ? 'flex' : 'hidden'} lg:flex flex-1 w-full`}>
         <ChatWindow />
+      </div>
+
+      {/* Info Panel */}
+      {/* sm/md: replaces chat when open; lg+: third column */}
+      <div
+        className={`${infoPanelOpen ? 'flex' : 'hidden'} 
+          w-full lg:w-[380px] xl:w-[420px] 
+          border-l border-default bg-app`}
+      >
+        <ChatInfoPanel />
       </div>
     </div>
   );

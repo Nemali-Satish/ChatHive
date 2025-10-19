@@ -6,6 +6,7 @@ const useChatStore = create((set) => ({
   messages: [],
   notifications: [],
   onlineUsers: [],
+  infoPanelOpen: false,
   
   setChats: (chats) => set({ chats }),
   
@@ -20,6 +21,8 @@ const useChatStore = create((set) => ({
   })),
   
   setSelectedChat: (chat) => set({ selectedChat: chat }),
+  setInfoPanelOpen: (open) => set({ infoPanelOpen: open }),
+  toggleInfoPanel: () => set((state) => ({ infoPanelOpen: !state.infoPanelOpen })),
   
   setMessages: (messages) => set({ messages }),
   

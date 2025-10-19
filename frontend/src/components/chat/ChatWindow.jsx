@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { MoreVertical, Phone, Video, Info, ArrowLeft, Trash2, Eraser, Ban, Unlock } from 'lucide-react';
+import { MoreVertical, Phone, Video, Info, ArrowLeft, Trash2, Eraser, Ban, Unlock, Bell, BellOff, LogOut } from 'lucide-react';
 import Avatar from '../ui/Avatar';
 import MessageList from './MessageList';
 import MessageInput from './MessageInput';
@@ -11,11 +11,12 @@ import { API_ENDPOINTS } from '../../config/constants';
 import toast from 'react-hot-toast';
 import { getSocket } from '../../services/socket';
 import { SOCKET_EVENTS } from '../../config/constants';
+import { useConfirmModal } from '../../context/ConfirmProvider';
 
 const ChatWindow = () => {
   const user = useAuthStore((state) => state.user);
   const updateUser = useAuthStore((state) => state.updateUser);
-  const { selectedChat, setSelectedChat, messages, setMessages, onlineUsers } = useChatStore();
+  const { selectedChat, setSelectedChat, messages, setMessages, onlineUsers, setInfoPanelOpen } = useChatStore();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef(null);
   const [loading, setLoading] = useState(false);
@@ -23,6 +24,7 @@ const ChatWindow = () => {
   const [blockedByOther, setBlockedByOther] = useState(false);
   const [optimisticBlocked, setOptimisticBlocked] = useState(null); // null = derive from store
   const socket = getSocket();
+  const confirmModal = useConfirmModal();
 
   // Compute derived identities early so any effects can safely reference them
   const chatName = selectedChat ? getChatName(selectedChat, user) : '';
@@ -163,72 +165,115 @@ const ChatWindow = () => {
     setSelectedChat(null);
   };
 
-  const handleClearChat = async () => {
-    try {
-      await api.delete(API_ENDPOINTS.CLEAR_CHAT(selectedChat._id));
-      setMessages([]);
-      // refresh sidebar previews
-      window.dispatchEvent(new Event('refresh-chats'));
-      toast.success('Chat cleared');
-      setMenuOpen(false);
-    } catch (e) {
-      toast.error(e.response?.data?.message || 'Failed to clear chat');
-    }
+  const confirmClearChat = () => {
+    confirmModal({
+      title: 'Clear chat?',
+      description: 'This removes messages from your view. Others remain unaffected.',
+      variant: 'danger',
+      confirmLabel: 'Clear',
+      onConfirm: async () => {
+        await api.delete(API_ENDPOINTS.CLEAR_CHAT(selectedChat._id));
+        setMessages([]);
+        window.dispatchEvent(new Event('refresh-chats'));
+        toast.success('Chat cleared');
+        setMenuOpen(false);
+      },
+    });
   };
 
-  const handleDeleteChat = async () => {
-    try {
-      await api.delete(API_ENDPOINTS.DELETE_CHAT(selectedChat._id));
-      // Notify sidebar to refresh chat list
-      window.dispatchEvent(new Event('refresh-chats'));
-      setSelectedChat(null);
-      toast.success('Chat deleted');
-      setMenuOpen(false);
-    } catch (e) {
-      toast.error(e.response?.data?.message || 'Failed to delete chat');
-    }
+  const confirmDeleteChat = () => {
+    confirmModal({
+      title: 'Delete chat?',
+      description: 'This removes the chat from your list. It will not affect the other user.',
+      variant: 'danger',
+      confirmLabel: 'Delete',
+      onConfirm: async () => {
+        await api.delete(API_ENDPOINTS.DELETE_CHAT(selectedChat._id));
+        window.dispatchEvent(new Event('refresh-chats'));
+        setSelectedChat(null);
+        toast.success('Chat deleted');
+        setMenuOpen(false);
+      },
+    });
   };
 
   const handleToggleBlock = async () => {
     if (!otherUser) return;
-    try {
-      let res;
-      // Set optimistic value immediately for instant UI feedback
-      setOptimisticBlocked(!isBlocked);
-      if (isBlocked) {
-        res = await api.delete(API_ENDPOINTS.UNBLOCK_USER(otherUser._id));
-        toast.success('User unblocked');
-        // Optimistically remove from blockedUsers
-        const next = (user?.blockedUsers || []).filter((id) => (id?._id || id) !== otherUser._id);
-        updateUser({ blockedUsers: next });
-        // Notify other UI parts to refresh
-        window.dispatchEvent(new Event('refresh-chats'));
-      } else {
-        res = await api.post(API_ENDPOINTS.BLOCK_USER(otherUser._id));
-        toast.success('User blocked');
-        // Optimistically add to blockedUsers
-        const next = [...(user?.blockedUsers || []), otherUser._id];
-        updateUser({ blockedUsers: next });
-        // Notify other UI parts to refresh
-        window.dispatchEvent(new Event('refresh-chats'));
-      }
-      // Reconcile with server
-      try {
-        const { data } = await api.get(API_ENDPOINTS.GET_ME);
-        if (data.success) {
-          updateUser(data.data);
-          // Reconciliation done; clear optimistic override
+    const blocking = !isBlocked;
+    confirmModal({
+      title: blocking ? `Block ${otherUser?.name || otherUser?.email || 'this user'}?` : `Unblock ${otherUser?.name || otherUser?.email || 'this user'}?`,
+      description: blocking
+        ? 'They will not be able to message you until you unblock them.'
+        : 'You will be able to exchange messages again.',
+      variant: blocking ? 'danger' : 'primary',
+      confirmLabel: blocking ? 'Block' : 'Unblock',
+      onConfirm: async () => {
+        try {
+          // Optimistic update
+          setOptimisticBlocked(blocking);
+          if (isBlocked) {
+            await api.delete(API_ENDPOINTS.UNBLOCK_USER(otherUser._id));
+            toast.success('User unblocked');
+            const next = (user?.blockedUsers || []).filter((id) => (id?._id || id) !== otherUser._id);
+            updateUser({ blockedUsers: next });
+          } else {
+            await api.post(API_ENDPOINTS.BLOCK_USER(otherUser._id));
+            toast.success('User blocked');
+            const next = [...(user?.blockedUsers || []), otherUser._id];
+            updateUser({ blockedUsers: next });
+          }
+          window.dispatchEvent(new Event('refresh-chats'));
+          // Reconcile with server
+          try {
+            const { data } = await api.get(API_ENDPOINTS.GET_ME);
+            if (data.success) {
+              updateUser(data.data);
+              setOptimisticBlocked(null);
+            }
+          } catch { setOptimisticBlocked(null); }
+          setMenuOpen(false);
+        } catch (e) {
+          toast.error(e.response?.data?.message || 'Failed to update block status');
           setOptimisticBlocked(null);
+          throw e; // keep modal open and show error text
         }
-      } catch { }
-      // Rollback optimistic state on failure
-      setOptimisticBlocked(null);
+      }
+    });
+  };
+
+  // Group actions
+  const handleToggleMuteGroup = async () => {
+    if (!selectedChat?.isGroupChat) return;
+    try {
+      const muted = Array.isArray(selectedChat.mutedBy) && selectedChat.mutedBy.some((id) => (id?._id || id) === user._id);
+      await api.put(API_ENDPOINTS.GROUP_MUTE, { chatId: selectedChat._id, mute: !muted });
+      const nextMutedBy = muted
+        ? (selectedChat.mutedBy || []).filter((id) => (id?._id || id) !== user._id)
+        : [ ...(selectedChat.mutedBy || []), user._id ];
+      useChatStore.getState().setSelectedChat({ ...selectedChat, mutedBy: nextMutedBy });
+      window.dispatchEvent(new Event('refresh-chats'));
+      toast.success(muted ? 'Unmuted group' : 'Muted group');
       setMenuOpen(false);
     } catch (e) {
-      toast.error(e.response?.data?.message || 'Failed to update block status');
-      // Rollback optimistic state on failure
-      setOptimisticBlocked(null);
+      toast.error(e.response?.data?.message || 'Failed to update mute');
     }
+  };
+
+  const confirmLeaveGroup = () => {
+    if (!selectedChat?.isGroupChat) return;
+    confirmModal({
+      title: 'Exit group?',
+      description: 'You will stop receiving messages from this group until re-added.',
+      variant: 'danger',
+      confirmLabel: 'Exit',
+      onConfirm: async () => {
+        await api.put(API_ENDPOINTS.GROUP_LEAVE, { chatId: selectedChat._id });
+        window.dispatchEvent(new Event('refresh-chats'));
+        setSelectedChat(null);
+        toast.success('Exited group');
+        setMenuOpen(false);
+      },
+    });
   };
 
   return (
@@ -245,45 +290,45 @@ const ChatWindow = () => {
               <ArrowLeft className="w-5 h-5 text-secondary" />
             </button>
 
-            <Avatar
-              src={chatAvatar}
-              alt={chatName}
-              size="md"
-              online={!selectedChat.isGroupChat && online}
-              className="flex-shrink-0"
-            />
-            <div className="flex-1 min-w-0">
-              <h2 className="font-medium text-primary truncate text-base">{chatName}</h2>
-              {!selectedChat.isGroupChat && otherUser && (
-                <p className="text-xs text-secondary truncate">
-                  {online ? 'online' : 'offline'}
-                </p>
-              )}
-              {selectedChat.isGroupChat && (
-                <p className="text-xs text-secondary truncate">
-                  {selectedChat.users.map(u => u.name).join(', ')}
-                </p>
-              )}
-            </div>
+            <button
+              onClick={() => setInfoPanelOpen(true)}
+              className="flex items-center gap-3 flex-1 min-w-0 rounded-lg hover-surface text-left"
+              aria-label={selectedChat.isGroupChat ? 'Open group info' : 'Open chat info'}
+            >
+              <Avatar
+                src={chatAvatar}
+                alt={chatName}
+                size="md"
+                online={!selectedChat.isGroupChat && online}
+                className="flex-shrink-0"
+              />
+              <div className="flex-1 min-w-0">
+                <h2 className="font-medium text-primary truncate text-base">{chatName}</h2>
+                {!selectedChat.isGroupChat && otherUser && (
+                  <p className="text-xs text-secondary truncate">
+                    {online ? 'online' : 'offline'}
+                  </p>
+                )}
+                {selectedChat.isGroupChat && (
+                  <p className="text-xs text-secondary truncate">
+                    {selectedChat.users.map(u => u.name).join(', ')}
+                  </p>
+                )}
+              </div>
+            </button>
           </div>
 
-          <div className="flex items-center gap-2 flex-shrink-0" ref={menuRef}>
-            <button className="p-2 rounded-full hover-surface transition-colors hidden sm:block">
-              <Video className="w-5 h-5 text-secondary" />
-            </button>
-            <button className="p-2 rounded-full hover-surface transition-colors hidden sm:block">
-              <Phone className="w-5 h-5 text-secondary" />
-            </button>
+          <div className="flex items-center gap-2 flex-shrink-0 relative" ref={menuRef}>
             <button onClick={() => setMenuOpen((v) => !v)} className="p-2 rounded-full hover-surface transition-colors">
               <MoreVertical className="w-5 h-5 text-secondary" />
             </button>
             {menuOpen && (
-              <div className="absolute right-4 top-12 z-20 w-48 bg-panel border border-default rounded-lg shadow-lg py-1">
-                <button onClick={handleClearChat} className="w-full px-4 py-2 text-left text-sm hover-surface flex items-center gap-2 text-primary">
+              <div className="absolute right-4 top-12 z-20 w-48 bg-panel border border-default rounded-lg shadow-xl py-1 transform origin-top-right transition-all duration-150 ease-out scale-100 opacity-100">
+                <button onClick={confirmClearChat} className="w-full px-4 py-2 text-left text-sm hover-surface flex items-center gap-2 text-primary">
                   <Eraser className="w-4 h-4" />
                   Clear chat
                 </button>
-                <button onClick={handleDeleteChat} className="w-full px-4 py-2 text-left text-sm hover-surface flex items-center gap-2" style={{ color: '#ef4444' }}>
+                <button onClick={confirmDeleteChat} className="w-full px-4 py-2 text-left text-sm hover-surface flex items-center gap-2" style={{ color: '#ef4444' }}>
                   <Trash2 className="w-4 h-4" />
                   Delete chat
                 </button>
@@ -292,6 +337,22 @@ const ChatWindow = () => {
                     {isBlocked ? <Unlock className="w-4 h-4" /> : <Ban className="w-4 h-4" />}
                     {isBlocked ? 'Unblock user' : 'Block user'}
                   </button>
+                )}
+                {selectedChat.isGroupChat && (
+                  <>
+                    <button onClick={handleToggleMuteGroup} className="w-full px-4 py-2 text-left text-sm hover-surface flex items-center gap-2 text-primary">
+                      {(Array.isArray(selectedChat.mutedBy) && selectedChat.mutedBy.some((id) => (id?._id || id) === user._id)) ? (
+                        <Bell className="w-4 h-4" />
+                      ) : (
+                        <BellOff className="w-4 h-4" />
+                      )}
+                      {(Array.isArray(selectedChat.mutedBy) && selectedChat.mutedBy.some((id) => (id?._id || id) === user._id)) ? 'Unmute group' : 'Mute group'}
+                    </button>
+                    <button onClick={confirmLeaveGroup} className="w-full px-4 py-2 text-left text-sm hover-surface flex items-center gap-2" style={{ color: '#ef4444' }}>
+                      <LogOut className="w-4 h-4" />
+                      Exit group
+                    </button>
+                  </>
                 )}
               </div>
             )}
@@ -320,7 +381,7 @@ const ChatWindow = () => {
           <div className="px-5 pb-4 pt-3">
             <div className="mx-auto max-w-2xl grid grid-cols-2  gap-4 sm:gap-8">
               <button
-                onClick={handleDeleteChat}
+                onClick={confirmDeleteChat}
                 className="group inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-colors hover-surface"
                 style={{ color: '#ef4444' }}
                 aria-label="Delete chat"

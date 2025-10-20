@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: chathive-backend
+    runtime: node
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      # Add your MongoDB URI
+      - key: MONGO_URI
+        generateValue: true
+      # Add your JWT secret
+      - key: JWT_SECRET
+        generateValue: true
+      # Add your Cloudinary credentials
+      - key: CLOUDINARY_CLOUD_NAME
+        generateValue: true
+      - key: CLOUDINARY_API_KEY
+        generateValue: true
+      - key: CLOUDINARY_API_SECRET
+        generateValue: true
+      # Add your frontend URL for CORS
+      - key: CLIENT_URL
+        generateValue: true

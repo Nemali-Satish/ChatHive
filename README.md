@@ -38,37 +38,7 @@ A modern, full-stack chat application inspired by WhatsApp, built with the MERN 
 - **Chat Muting**: Mute notifications for specific chats
 - **Responsive Design**: Works seamlessly on desktop and mobile devices
 
-## 🏗️ Architecture
 
-### Backend (Node.js + Express)
-```
-backend/
-├── config/          # Database, Cloudinary, CORS, Logger configurations
-├── controllers/     # Route handlers for API endpoints
-├── middleware/      # Authentication, error handling, file upload middleware
-├── models/          # MongoDB schemas (User, Chat, Message, Invite)
-├── routes/          # API route definitions
-├── socket/          # Real-time Socket.io event handlers
-├── utils/           # Helper functions and utilities
-└── server.js        # Main application entry point
-```
-
-### Frontend (React + Vite)
-```
-frontend/
-├── public/          # Static assets
-├── src/
-│   ├── components/  # Reusable UI components
-│   │   ├── chat/    # Chat-specific components
-│   │   └── ui/      # Generic UI components
-│   ├── context/     # React context providers
-│   ├── pages/       # Route components (Login, Register, Home, etc.)
-│   ├── services/    # API and Socket service layers
-│   ├── store/       # Zustand state management
-│   └── utils/       # Helper functions
-├── App.jsx          # Main application component
-└── main.jsx         # Application entry point
-```
 
 ## 🚀 Quick Start
 
@@ -211,62 +181,7 @@ frontend/
 - `user_offline` - User went offline
 - `message_read` - Message marked as read
 
-## 🗄️ Database Schema
 
-### User Model
-```javascript
-{
-  name: String,
-  firstName: String,
-  lastName: String,
-  username: String (unique),
-  email: String (unique),
-  password: String (hashed),
-  avatar: { public_id, url },
-  bio: String,
-  isOnline: Boolean,
-  lastSeen: Date,
-  friends: [ObjectId],
-  blockedUsers: [ObjectId],
-  profileCompleted: Boolean
-}
-```
-
-### Chat Model
-```javascript
-{
-  chatName: String,
-  isGroupChat: Boolean,
-  description: String,
-  users: [ObjectId],
-  latestMessage: ObjectId,
-  groupAdmin: ObjectId,
-  admins: [ObjectId],
-  groupAvatar: { public_id, url },
-  isActive: Boolean,
-  mutedBy: [ObjectId],
-  deletedBy: [ObjectId]
-}
-```
-
-### Message Model
-```javascript
-{
-  sender: ObjectId,
-  content: String,
-  chat: ObjectId,
-  attachments: [
-    {
-      public_id: String,
-      url: String,
-      type: enum['image', 'video', 'audio', 'document']
-    }
-  ],
-  readBy: [ObjectId],
-  deletedBy: [ObjectId],
-  messageType: enum['text', 'image', 'video', 'audio', 'document']
-}
-```
 
 ## 🔒 Security Features
 
@@ -289,16 +204,97 @@ frontend/
 
 ## 🚀 Deployment
 
-### Backend Deployment
-1. Set `NODE_ENV=production` in environment variables
-2. Configure production MongoDB URI
-3. Set up Cloudinary production credentials
-4. Deploy to services like Heroku, DigitalOcean, or Railway
+### Frontend Deployment (Vercel)
 
-### Frontend Deployment
-1. Run `npm run build` to create production build
-2. Deploy the `dist` folder to static hosting (Netlify, Vercel, etc.)
-3. Update API URLs in environment variables
+1. **Connect to Vercel**
+   ```bash
+   # Install Vercel CLI (if not already installed)
+   npm i -g vercel
+
+   # Login to Vercel
+   vercel login
+
+   # Deploy frontend
+   cd frontend
+   vercel --prod
+   ```
+
+2. **Environment Variables for Vercel**
+   Add these environment variables in your Vercel dashboard:
+   ```env
+   VITE_API_URL=https://your-backend-app-name.onrender.com
+   VITE_SOCKET_URL=https://your-backend-app-name.onrender.com
+   ```
+
+3. **Alternative: Deploy via GitHub Integration**
+   - Push your code to GitHub
+   - Connect your GitHub repository to Vercel
+   - Vercel will automatically detect it's a Vite app and deploy it
+
+### Backend Deployment (Render)
+
+1. **Connect to Render**
+   - Go to [render.com](https://render.com) and sign up/login
+   - Click "New +" and select "Web Service"
+   - Connect your GitHub repository
+
+2. **Configure Render Service**
+   - **Name**: `chathive-backend` (or your preferred name)
+   - **Runtime**: `Node.js`
+   - **Build Command**: `npm install`
+   - **Start Command**: `npm start`
+
+3. **Environment Variables for Render**
+   Add these environment variables in your Render service dashboard:
+   ```env
+   NODE_ENV=production
+   PORT=10000
+   MONGO_URI=your_mongodb_connection_string
+   JWT_SECRET=your_jwt_secret_key
+   JWT_EXPIRE=7d
+
+   # Cloudinary Configuration
+   CLOUDINARY_CLOUD_NAME=your_cloudinary_cloud_name
+   CLOUDINARY_API_KEY=your_cloudinary_api_key
+   CLOUDINARY_API_SECRET=your_cloudinary_api_secret
+
+   # Frontend URL for CORS
+   CLIENT_URL=https://your-frontend-app.vercel.app
+   ```
+
+4. **Deploy**
+   - Click "Create Web Service"
+   - Render will automatically build and deploy your backend
+
+### Post-Deployment Steps
+
+1. **Update Environment Variables**
+   - Update your Vercel frontend environment variables with the actual Render backend URL
+   - Ensure CORS is properly configured in your backend
+
+2. **Domain Configuration (Optional)**
+   - **Vercel**: Add custom domain in Vercel dashboard
+   - **Render**: Add custom domain in Render dashboard
+
+3. **Database Setup**
+   - Ensure your MongoDB database is accessible from Render
+   - Update MongoDB connection string if using MongoDB Atlas
+
+4. **File Storage**
+   - Ensure Cloudinary credentials are correctly set up for file uploads
+
+### URLs After Deployment
+- **Frontend**: `https://your-frontend-app.vercel.app`
+- **Backend API**: `https://your-backend-app.onrender.com`
+- **Socket Connection**: `https://your-backend-app.onrender.com`
+
+### Troubleshooting
+
+**CORS Issues**: Ensure `CLIENT_URL` in backend matches your Vercel frontend URL exactly.
+
+**Build Failures**: Check that all environment variables are properly set in both platforms.
+
+**Socket Connection Issues**: Verify that Socket.io is properly configured for production environment.
 
 ## 🤝 Contributing
 
@@ -308,25 +304,3 @@ frontend/
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
-## 📝 License
-
-This project is licensed under the ISC License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- Inspired by WhatsApp and modern messaging platforms
-- Built with the MERN stack for scalability and performance
-- Socket.io for real-time communication
-- Cloudinary for efficient media management
-
-## 📞 Support
-
-For support and questions:
-- Create an issue in the repository
-- Contact the development team
-
----
-
-<div align="center">
-  Made with ❤️ for modern communication
-</div>

@@ -17,9 +17,5 @@
   ],
   "env": {
     "NODE_ENV": "production"
-  },
-  "functions": {
-    "src": "netlify/functions",
-    "runtime": "nodejs18.x"
   }
 }

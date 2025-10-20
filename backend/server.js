@@ -22,6 +22,7 @@ import authRoutes from './routes/authRoutes.js';
 import userRoutes from './routes/userRoutes.js';
 import chatRoutes from './routes/chatRoutes.js';
 import messageRoutes from './routes/messageRoutes.js';
+import inviteRoutes from './routes/inviteRoutes.js';
 
 // Import middleware
 import { notFound, errorHandler } from './middleware/error.js';
@@ -97,6 +98,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/chats', chatRoutes);
 app.use('/api/messages', messageRoutes);
+app.use('/api/invites', inviteRoutes);
 
 // Lightweight health check
 app.get('/api/health', (req, res) => {

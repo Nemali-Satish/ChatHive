@@ -3,6 +3,25 @@ import User from '../models/User.js';
 import { getIO } from '../socket/socket.js';
 import { uploadToCloudinary, deleteFromCloudinary } from '../utils/cloudinaryUpload.js';
 
+// @desc    Update user privacy (visibility)
+// @route   PUT /api/users/privacy
+// @access  Private
+export const updatePrivacy = asyncHandler(async (req, res) => {
+  const { visibility } = req.body || {};
+  if (!['public', 'private'].includes(visibility)) {
+    res.status(400);
+    throw new Error('Invalid visibility');
+  }
+  const user = await User.findById(req.user._id);
+  if (!user) {
+    res.status(404);
+    throw new Error('User not found');
+  }
+  user.visibility = visibility;
+  const updated = await user.save();
+  res.json({ success: true, data: { _id: updated._id, visibility: updated.visibility } });
+});
+
 // @desc    Search users
 // @route   GET /api/users/search?query=
 // @access  Private

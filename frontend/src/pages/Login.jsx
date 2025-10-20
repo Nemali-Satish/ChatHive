@@ -6,13 +6,12 @@ import Input from '../components/ui/Input';
 import Button from '../components/ui/Button';
 import ThemeToggle from '../components/ui/ThemeToggle';
 import { validateLoginForm } from '../utils/validation';
-import api from '../services/api';
-import { API_ENDPOINTS } from '../config/constants';
 import useAuthStore from '../store/useAuthStore';
 
 const Login = () => {
   const navigate = useNavigate();
   const setAuth = useAuthStore((state) => state.setAuth);
+  const login = useAuthStore((state) => state.login);
 
   const [formData, setFormData] = useState({
     identifier: '',
@@ -57,13 +56,14 @@ const Login = () => {
     setLoading(true);
 
     try {
-      const response = await api.post(API_ENDPOINTS.LOGIN, {
-        identifier: formData.identifier,
-        password: formData.password,
-      });
+      const response = await login(
+        formData.identifier,
+        formData.password,
+      );
       const data = response.data;
 
       if (data.success) {
+        // Store login already persisted state; setAuth is redundant but kept to preserve existing flow
         setAuth(data.data, data.data.token);
         toast.success('Login successful!');
         const params = new URLSearchParams(window.location.search);

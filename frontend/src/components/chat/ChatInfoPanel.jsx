@@ -2,10 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import Avatar from '../ui/Avatar';
 import useChatStore from '../../store/useChatStore';
 import useAuthStore from '../../store/useAuthStore';
-import api from '../../services/api';
-import { API_ENDPOINTS } from '../../config/constants';
 import toast from 'react-hot-toast';
-import { X, ArrowLeft, Edit2, Check, XCircle, Upload, Bell, BellOff, LogOut, Trash2, Eraser, Shield, UserPlus, UserMinus, Crown } from 'lucide-react';
+import { X, ArrowLeft, Edit2, Check, XCircle, Upload, LogOut, Trash2, Eraser, Shield, UserPlus, UserMinus, Crown } from 'lucide-react';
 import AddMemberModal from './AddMemberModal';
 // Central confirm modal provider hook
 import { useConfirmModal } from '../../context/ConfirmProvider';
@@ -16,6 +14,15 @@ import EditGroupModal from './EditGroupModal';
 export default function ChatInfoPanel() {
   const { selectedChat, setSelectedChat, infoPanelOpen, setInfoPanelOpen } = useChatStore();
   const user = useAuthStore((s) => s.user);
+  const updateGroupInfoAsync = useChatStore((s) => s.updateGroupInfoAsync);
+  const deleteGroupForAllAsync = useChatStore((s) => s.deleteGroupForAllAsync);
+  const addToGroupAsync = useChatStore((s) => s.addToGroupAsync);
+  const removeFromGroupAsync = useChatStore((s) => s.removeFromGroupAsync);
+  const addAdminAsync = useChatStore((s) => s.addAdminAsync);
+  const removeAdminAsync = useChatStore((s) => s.removeAdminAsync);
+  const leaveGroupAsync = useChatStore((s) => s.leaveGroupAsync);
+  const clearChatAsync = useChatStore((s) => s.clearChatAsync);
+  const deleteChatAsync = useChatStore((s) => s.deleteChatAsync);
 
   const isGroup = !!selectedChat?.isGroupChat;
   const meId = user?._id;
@@ -26,7 +33,6 @@ export default function ChatInfoPanel() {
   const [name, setName] = useState(selectedChat?.chatName || '');
   const [editingDesc, setEditingDesc] = useState(false);
   const [description, setDescription] = useState(selectedChat?.description || '');
-  const muted = useMemo(() => Array.isArray(selectedChat?.mutedBy) && selectedChat.mutedBy.some((id) => (id?._id || id) === meId), [selectedChat?.mutedBy, meId]);
   const [showAddMember, setShowAddMember] = useState(false);
   // global confirm modal
   const confirmModal = useConfirmModal();
@@ -42,7 +48,7 @@ export default function ChatInfoPanel() {
       if (editingName) payload.name = name.trim();
       if (editingDesc) payload.description = description.trim();
       if (!payload.name && !payload.description) return;
-      const { data } = await api.put(API_ENDPOINTS.GROUP_INFO_UPDATE, payload);
+      const { data } = await updateGroupInfoAsync(payload);
       if (data?.success) {
         useChatStore.getState().setSelectedChat(data.data);
         toast.success('Group updated');
@@ -87,7 +93,7 @@ export default function ChatInfoPanel() {
       variant: 'danger',
       confirmLabel: 'Delete',
       onConfirm: async () => {
-        await api.delete(API_ENDPOINTS.GROUP_DELETE_ALL(selectedChat._id));
+        await deleteGroupForAllAsync(selectedChat._id);
         window.dispatchEvent(new Event('refresh-chats'));
         setSelectedChat(null);
         setInfoPanelOpen(false);
@@ -99,7 +105,7 @@ export default function ChatInfoPanel() {
   // Admin-only: membership
   const addMember = async (userId) => {
     try {
-      const { data } = await api.put(API_ENDPOINTS.ADD_TO_GROUP, { chatId: selectedChat._id, userId });
+      const { data } = await addToGroupAsync({ chatId: selectedChat._id, userId });
       if (data?.success) {
         setSelectedChat(data.data);
         toast.success('Member added');
@@ -118,7 +124,7 @@ export default function ChatInfoPanel() {
       variant: 'danger',
       confirmLabel: 'Remove',
       onConfirm: async () => {
-        const { data } = await api.put(API_ENDPOINTS.REMOVE_FROM_GROUP, { chatId: selectedChat._id, userId });
+        const { data } = await removeFromGroupAsync({ chatId: selectedChat._id, userId });
         if (data?.success) {
           setSelectedChat(data.data);
           toast.success('Member removed');
@@ -137,8 +143,9 @@ export default function ChatInfoPanel() {
       variant: makeAdmin ? 'primary' : 'danger',
       confirmLabel: makeAdmin ? 'Make admin' : 'Remove',
       onConfirm: async () => {
-        const ep = makeAdmin ? API_ENDPOINTS.GROUP_ADMIN_ADD : API_ENDPOINTS.GROUP_ADMIN_REMOVE;
-        const { data } = await api.put(ep, { chatId: selectedChat._id, userId });
+        const { data } = makeAdmin
+          ? await addAdminAsync({ chatId: selectedChat._id, userId })
+          : await removeAdminAsync({ chatId: selectedChat._id, userId });
         if (data?.success) {
           setSelectedChat(data.data);
           toast.success(makeAdmin ? 'Promoted to admin' : 'Admin removed');
@@ -155,7 +162,7 @@ export default function ChatInfoPanel() {
       variant: 'danger',
       confirmLabel: 'Exit',
       onConfirm: async () => {
-        await api.put(API_ENDPOINTS.GROUP_LEAVE, { chatId: selectedChat._id });
+        await leaveGroupAsync(selectedChat._id);
         window.dispatchEvent(new Event('refresh-chats'));
         setSelectedChat(null);
         setInfoPanelOpen(false);
@@ -172,23 +179,9 @@ export default function ChatInfoPanel() {
   };
 
 
-  const handleToggleMute = async () => {
-    try {
-      if (isGroup) {
-        await api.put(API_ENDPOINTS.GROUP_MUTE, { chatId: selectedChat._id, mute: !muted });
-        const nextMuted = muted ? (selectedChat.mutedBy || []).filter((id) => (id?._id || id) !== meId) : [ ...(selectedChat.mutedBy || []), meId ];
-        useChatStore.getState().setSelectedChat({ ...selectedChat, mutedBy: nextMuted });
-      } else {
-        toast('Per-chat mute is not available yet');
-      }
-    } catch (e) {
-      toast.error(e?.response?.data?.message || 'Failed to update mute');
-    }
-  };
-
   const handleExitGroup = async () => {
     try {
-      await api.put(API_ENDPOINTS.GROUP_LEAVE, { chatId: selectedChat._id });
+      await leaveGroupAsync(selectedChat._id);
       window.dispatchEvent(new Event('refresh-chats'));
       setSelectedChat(null);
       toast.success('Exited group');
@@ -205,7 +198,7 @@ export default function ChatInfoPanel() {
       variant: 'danger',
       confirmLabel: 'Clear',
       onConfirm: async () => {
-        await api.delete(API_ENDPOINTS.CLEAR_CHAT(selectedChat._id));
+        await clearChatAsync(selectedChat._id);
         toast.success('Chat cleared');
       },
     });
@@ -218,7 +211,7 @@ export default function ChatInfoPanel() {
       variant: 'danger',
       confirmLabel: 'Delete',
       onConfirm: async () => {
-        await api.delete(API_ENDPOINTS.DELETE_CHAT(selectedChat._id));
+        await deleteChatAsync(selectedChat._id);
         window.dispatchEvent(new Event('refresh-chats'));
         setSelectedChat(null);
         setInfoPanelOpen(false);
@@ -343,10 +336,7 @@ export default function ChatInfoPanel() {
                 <span className="text-sm text-primary">Add members</span>
               </button>
             )}
-            <button onClick={handleToggleMute} className="w-full flex items-center gap-3 px-6 py-3 hover-surface">
-              {muted ? <Bell className="w-4 h-4 text-secondary" /> : <BellOff className="w-4 h-4 text-secondary" />}
-              <span className="text-sm text-primary">{muted ? 'Unmute notifications' : 'Mute notifications'}</span>
-            </button>
+            {/* Mute/unmute removed */}
             {isGroup ? (
               <button onClick={confirmExitGroup} className="w-full flex items-center gap-3 px-6 py-3 hover-surface" style={{ color: '#ef4444' }}>
                 <LogOut className="w-4 h-4" />

@@ -6,13 +6,12 @@ import Input from '../components/ui/Input';
 import Button from '../components/ui/Button';
 import ThemeToggle from '../components/ui/ThemeToggle';
 import { validateRegisterForm } from '../utils/validation';
-import api from '../services/api';
-import { API_ENDPOINTS } from '../config/constants';
 import useAuthStore from '../store/useAuthStore';
 
 const Register = () => {
   const navigate = useNavigate();
   const setAuth = useAuthStore((state) => state.setAuth);
+  const register = useAuthStore((state) => state.register);
 
   const [formData, setFormData] = useState({
     firstName: '',
@@ -64,7 +63,7 @@ const Register = () => {
     setLoading(true);
 
     try {
-      const response = await api.post(API_ENDPOINTS.REGISTER, {
+      const response = await register({
         firstName: formData.firstName,
         lastName: formData.lastName,
         username: formData.username,
@@ -74,6 +73,7 @@ const Register = () => {
       const data = response.data;
 
       if (data.success) {
+        // Store register already persisted state; setAuth is redundant but kept to preserve existing flow
         setAuth(data.data, data.data.token);
         toast.success('Registration successful!');
         setTimeout(() => navigate('/'), 100);

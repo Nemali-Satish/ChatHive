@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import Avatar from '../ui/Avatar';
-import api from '../../services/api';
-import { API_ENDPOINTS } from '../../config/constants';
+import useChatStore from '../../store/useChatStore';
 import toast from 'react-hot-toast';
 
 export default function AddMemberModal({ open, onClose, chat }) {
@@ -10,6 +9,9 @@ export default function AddMemberModal({ open, onClose, chat }) {
   const [users, setUsers] = useState([]);
   const [selected, setSelected] = useState([]);
   const [submitting, setSubmitting] = useState(false);
+
+  const addToGroupAsync = useChatStore((s) => s.addToGroupAsync);
+  const createInviteAsync = useChatStore((s) => s.createInviteAsync);
 
   useEffect(() => {
     if (!open) return;
@@ -26,9 +28,9 @@ export default function AddMemberModal({ open, onClose, chat }) {
       let res;
       const q = search.trim();
       if (q.length > 0) {
-        res = await api.get(`${API_ENDPOINTS.SEARCH_USERS}?query=${encodeURIComponent(q)}`);
+        res = await DataService.users.searchUsers(q);
       } else {
-        res = await api.get(API_ENDPOINTS.GET_USERS);
+        res = await DataService.users.getUsers();
       }
       const list = Array.isArray(res.data?.data) ? res.data.data : [];
       const existingIds = new Set((chat?.users || []).map((u) => u._id));
@@ -55,8 +57,25 @@ export default function AddMemberModal({ open, onClose, chat }) {
     try {
       const ids = [...selected];
       for (const id of ids) {
-        // Add one by one to leverage existing endpoint and validations
-        await api.put(API_ENDPOINTS.ADD_TO_GROUP, { chatId: chat._id, userId: id });
+        try {
+          await addToGroupAsync({ chatId: chat._id, userId: id });
+        } catch (err) {
+          const code = err?.response?.data?.code;
+          const requiresInvite = err?.response?.data?.requiresInvite;
+          if (code === 'PRIVATE_USER' && requiresInvite) {
+            const ok = window.confirm('This user is private. Send a group request?');
+            if (ok) {
+              try {
+                await createInviteAsync({ type: 'group', to: id, groupId: chat._id });
+                toast.success('Invite sent');
+              } catch {
+                toast.error('Failed to send invite');
+              }
+            }
+          } else {
+            throw err;
+          }
+        }
       }
       window.dispatchEvent(new Event('refresh-chats'));
       toast.success('Member(s) added');

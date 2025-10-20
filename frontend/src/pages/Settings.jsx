@@ -1,20 +1,15 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Search,
   User,
-  Shield,
   MessageSquare,
-  Bell,
-  Keyboard,
-  HelpCircle,
   LogOut,
   ChevronRight,
   Cog,
   ArrowLeft
 } from 'lucide-react';
 import Avatar from '../components/ui/Avatar';
-import ThemeToggle from '../components/ui/ThemeToggle';
+import Switch from '../components/ui/Switch';
 import useAuthStore from '../store/useAuthStore';
 import ProfileSetup from './ProfileSetup';
 import { useTheme } from '../context/ThemeContext';
@@ -58,18 +53,14 @@ export default function Settings() {
           <div className="rounded-2xl border border-default bg-panel p-4 sm:p-6 space-y-6">
             <section>
               <h3 className="text-lg font-medium mb-2">Theme</h3>
-              <div className="flex gap-3">
-                <button
-                  className={`btn ${theme==='light' ? 'btn-primary' : 'btn-outline'}`}
-                  onClick={() => setTheme('light')}
-                >Light</button>
-                <button
-                  className={`btn ${theme==='dark' ? 'btn-primary' : 'btn-outline'}`}
-                  onClick={() => setTheme('dark')}
-                >Dark</button>
-                <button className="btn btn-outline" onClick={toggleTheme}>Toggle</button>
-              </div>
+              <Switch
+                checked={theme === 'dark'}
+                onChange={(checked) => setTheme(checked ? 'dark' : 'light')}
+                labelLeft="Light"
+                labelRight="Dark"
+              />
             </section>
+
           </div>
         </div>
       );

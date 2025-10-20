@@ -1,25 +1,26 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Plus, Settings, LogOut, MoreVertical, Users, Ban, Sun, Moon } from 'lucide-react';
+import { Search, Plus, Settings, LogOut, MoreVertical, Users, Ban, Sun, Moon, Bell, Check, X } from 'lucide-react';
 import ChatList from './ChatList';
 import NewChatView from './NewChatView';
 import Avatar from '../ui/Avatar';
 import useAuthStore from '../../store/useAuthStore';
 import useChatStore from '../../store/useChatStore';
-import api from '../../services/api';
-import { API_ENDPOINTS } from '../../config/constants';
+// Network moved into stores
 import { disconnectSocket } from '../../services/socket';
 import toast from 'react-hot-toast';
 import { initializeSocket, getSocket } from '../../services/socket';
 import { SOCKET_EVENTS } from '../../config/constants';
 import { useTheme } from '../../context/ThemeContext';
+import { formatLastSeen } from '../../utils/helpers';
 import { useConfirmModal } from '../../context/ConfirmProvider';
+import NotificationsModal from './NotificationsModal';
 
 const Sidebar = () => {
   const navigate = useNavigate();
   const { theme, toggleTheme } = useTheme();
   const user = useAuthStore((state) => state.user);
-  const logout = useAuthStore((state) => state.logout);
+  const logoutAsync = useAuthStore((state) => state.logoutAsync);
   const [chats, setChats] = useState([]);
   const [loading, setLoading] = useState(false);
   const [showNewChat, setShowNewChat] = useState(false);
@@ -29,8 +30,22 @@ const Sidebar = () => {
   const [friends, setFriends] = useState([]);
   const [blockedUsers, setBlockedUsers] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
+  const [invites, setInvites] = useState([]);
+  const [pendingSent, setPendingSent] = useState([]); // server-side pending sent invites
+  const [showInvites, setShowInvites] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
   const menuRef = useRef(null);
   const { selectedChat } = useChatStore();
+  const fetchChatsAction = useChatStore((s) => s.fetchChats);
+  const markChatRead = useChatStore((s) => s.markChatRead);
+  const fetchUserDataAsync = useChatStore((s) => s.fetchUserDataAsync);
+  const userRemoveFriendAsync = useChatStore((s) => s.userRemoveFriendAsync);
+  const userUnblockAsync = useChatStore((s) => s.userUnblockAsync);
+  const listPendingInvitesAsync = useChatStore((s) => s.listPendingInvitesAsync);
+  const listPendingInvitesSentAsync = useChatStore((s) => s.listPendingInvitesSentAsync);
+  const markInviteReadAsync = useChatStore((s) => s.markInviteReadAsync);
+  const acceptInviteAsync = useChatStore((s) => s.acceptInviteAsync);
+  const declineInviteAsync = useChatStore((s) => s.declineInviteAsync);
   const selectedChatIdRef = useRef(null);
   const confirmModal = useConfirmModal();
   useEffect(() => {
@@ -47,6 +62,8 @@ const Sidebar = () => {
 
   useEffect(() => {
     fetchChats(false);
+    fetchInvites(true);
+    fetchPendingSent(true);
   }, []);
 
   // Listen for global refresh event (e.g., after deleting a chat from ChatWindow)
@@ -54,6 +71,8 @@ const Sidebar = () => {
     const handler = () => {
       fetchChats(true);
       fetchUserData();
+      fetchInvites();
+      fetchPendingSent(true);
     };
     window.addEventListener('refresh-chats', handler);
     return () => window.removeEventListener('refresh-chats', handler);
@@ -70,6 +89,7 @@ const Sidebar = () => {
       const onConnected = () => {
         // fetch chats once connected (silent)
         fetchChats(true);
+        fetchInvites(true);
       };
       const onMessageReceived = (msg) => {
         // Switch to main Chats tab and clear search so the new chat is visible
@@ -88,7 +108,12 @@ const Sidebar = () => {
             : [{ ...msg.chat, latestMessage: msg }, ...prev];
           return updated;
         });
+      } else {
+        // If we only have ids, fallback to fetch full list so new chat appears
+        fetchChats(true);
       }
+      // Also refresh invites in case this message is a request-type notification
+      fetchInvites(true);
       };
       const onMessageRead = ({ chatId, userId }) => {
         // If I read messages in a chat elsewhere, clear its unread counter
@@ -101,6 +126,14 @@ const Sidebar = () => {
             return next;
           });
         }
+      };
+      const onGroupNotification = (payload) => {
+        // Group invitations and membership changes should refresh invites/chats immediately
+        fetchInvites(true);
+        fetchChats(true);
+      };
+      const onGroupUpdated = (payload) => {
+        fetchChats(true);
       };
       const onUserBlocked = ({ by }) => {
         // If current user got blocked by someone, refresh list (chat might be hidden or input disabled)
@@ -116,6 +149,9 @@ const Sidebar = () => {
       socket.on(SOCKET_EVENTS.MESSAGE_READ, onMessageRead);
       socket.on(SOCKET_EVENTS.USER_BLOCKED, onUserBlocked);
       socket.on(SOCKET_EVENTS.USER_UNBLOCKED, onUserUnblocked);
+      socket.on(SOCKET_EVENTS.INVITES_UPDATED, () => { setActiveTab('chats'); setSearchQuery(''); fetchInvites(true); fetchPendingSent(true); fetchChats(true); });
+      socket.on(SOCKET_EVENTS.GROUP_NOTIFICATION, onGroupNotification);
+      socket.on(SOCKET_EVENTS.GROUP_UPDATED, onGroupUpdated);
 
       return () => {
         socket.off(SOCKET_EVENTS.CONNECTED, onConnected);
@@ -124,15 +160,31 @@ const Sidebar = () => {
         socket.off(SOCKET_EVENTS.MESSAGE_READ, onMessageRead);
         socket.off(SOCKET_EVENTS.USER_BLOCKED, onUserBlocked);
         socket.off(SOCKET_EVENTS.USER_UNBLOCKED, onUserUnblocked);
+        socket.off(SOCKET_EVENTS.INVITES_UPDATED);
+        socket.off(SOCKET_EVENTS.GROUP_NOTIFICATION, onGroupNotification);
+        socket.off(SOCKET_EVENTS.GROUP_UPDATED, onGroupUpdated);
       };
     } catch (e) {
       console.error('Socket setup failed', e);
     }
   }, [user?._id]);
 
+  // Periodically refresh invites and sent-pending so badge stays fresh
+  useEffect(() => {
+    const t = setInterval(() => { fetchInvites(true); fetchPendingSent(true); }, 30000);
+    return () => clearInterval(t);
+  }, []);
+
   // Clear unread count when opening a chat
   useEffect(() => {
     if (selectedChat?._id) {
+      // Ensure the selected chat is present in the sidebar list even if it has no messages yet
+      setChats((prev) => {
+        const exists = prev.some((c) => c._id === selectedChat._id);
+        if (exists) return prev;
+        return [selectedChat, ...prev];
+      });
+
       setUnreadCounts((prev) => {
         const key = String(selectedChat._id);
         if (!prev[key]) return prev;
@@ -142,7 +194,7 @@ const Sidebar = () => {
       });
       // Optionally mark as read on server
       try {
-        api.put(API_ENDPOINTS.MARK_AS_READ(selectedChat._id));
+        markChatRead(selectedChat._id);
       } catch { }
     }
   }, [selectedChat?._id]);
@@ -179,9 +231,19 @@ const Sidebar = () => {
   const fetchChats = async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const { data } = await api.get(API_ENDPOINTS.GET_CHATS);
-      if (data.success) {
-        setChats(data.data);
+      const { data } = await fetchChatsAction();
+      if (data?.success) {
+        const serverChats = data.data || [];
+        // If a chat is currently selected but not present in server list yet, keep it visible
+        let merged = (() => {
+          if (selectedChat && selectedChat._id && !serverChats.some((c) => c._id === selectedChat._id)) {
+            return [selectedChat, ...serverChats];
+          }
+          return serverChats;
+        })();
+        // Include pending-sent placeholders
+        merged = mergeChatsWithPending(merged, pendingSent, user?._id);
+        setChats(merged);
       }
     } catch (error) {
       console.error('Failed to fetch chats');
@@ -193,8 +255,9 @@ const Sidebar = () => {
   const fetchUserData = async () => {
     setLoadingUsers(true);
     try {
-      const { data } = await api.get(API_ENDPOINTS.GET_USER(user._id));
-      if (data.success) {
+      const res = await fetchUserDataAsync(user._id);
+      const data = res.data;
+      if (data?.success) {
         setFriends(data.data.friends || []);
         setBlockedUsers(data.data.blockedUsers || []);
       }
@@ -202,6 +265,80 @@ const Sidebar = () => {
       console.error('Failed to fetch user data');
     } finally {
       setLoadingUsers(false);
+    }
+  };
+
+  const fetchInvites = async (silent = false) => {
+    try {
+      const res = await listPendingInvitesAsync();
+      if (res.data?.success) setInvites(res.data.data || []);
+    } catch {}
+  };
+
+  const fetchPendingSent = async (silent = false) => {
+    try {
+      const res = await listPendingInvitesSentAsync();
+      if (res.data?.success) setPendingSent(res.data.data || []);
+    } catch {}
+  };
+
+  // When pendingSent changes, re-merge into chats for placeholder visibility
+  useEffect(() => {
+    setChats((prev) => mergeChatsWithPending(prev, pendingSent, user?._id));
+  }, [pendingSent?.length]);
+
+  const mergeChatsWithPending = (serverChats, pending, myId) => {
+    const out = [...serverChats];
+    const has = new Set(out.map((c) => String(c._id)));
+    for (const inv of pending || []) {
+      const other = inv?.to;
+      if (!other?._id) continue;
+      // try find any existing 1:1 chat with this user
+      const exists = out.some((c) => !c.isGroupChat && (c.users || []).some(u => (u._id || u) === other._id));
+      if (exists) continue;
+      const placeholder = {
+        _id: `invite-${inv._id}`,
+        isGroupChat: false,
+        users: [{ _id: myId }, other],
+        latestMessage: null,
+        pendingInvite: true,
+        updatedAt: inv.createdAt,
+      };
+      out.unshift(placeholder);
+    }
+    return out;
+  };
+
+  const markAllInvitesRead = async () => {
+    try {
+      const unread = (invites || []).filter((i) => !i.read);
+      await Promise.all(unread.map((i) => markInviteReadAsync(i._id)));
+      setInvites((prev) => prev.map((i) => ({ ...i, read: true })));
+    } catch {}
+  };
+
+  const onAcceptInvite = async (id) => {
+    try {
+      const { data } = await acceptInviteAsync(id);
+      if (data?.success) {
+        setInvites((prev) => prev.filter((i) => i._id !== id));
+        toast.success('Invite accepted');
+        fetchChats(true);
+      }
+    } catch {
+      toast.error('Failed to accept invite');
+    }
+  };
+
+  const onDeclineInvite = async (id) => {
+    try {
+      const { data } = await declineInviteAsync(id);
+      if (data?.success) {
+        setInvites((prev) => prev.filter((i) => i._id !== id));
+        toast.success('Invite declined');
+      }
+    } catch {
+      toast.error('Failed to decline invite');
     }
   };
 
@@ -215,7 +352,7 @@ const Sidebar = () => {
       variant: 'danger',
       confirmLabel: 'Remove',
       onConfirm: async () => {
-        const { data } = await api.delete(API_ENDPOINTS.REMOVE_FRIEND(userId));
+        const { data } = await userRemoveFriendAsync(userId);
         if (data.success) {
           setFriends(friends.filter(f => f._id !== userId));
           toast.success('Friend removed');
@@ -235,7 +372,7 @@ const Sidebar = () => {
       variant: 'primary',
       confirmLabel: 'Unblock',
       onConfirm: async () => {
-        const { data } = await api.delete(API_ENDPOINTS.UNBLOCK_USER(userId));
+        const { data } = await userUnblockAsync(userId);
         if (data.success) {
           setBlockedUsers(blockedUsers.filter(u => u._id !== userId));
           toast.success('User unblocked');
@@ -253,9 +390,8 @@ const Sidebar = () => {
       variant: 'danger',
       confirmLabel: 'Logout',
       onConfirm: async () => {
-        await api.post(API_ENDPOINTS.LOGOUT);
+        await logoutAsync();
         disconnectSocket();
-        logout();
         toast.success('Logged out successfully');
         navigate('/login');
       }
@@ -275,11 +411,9 @@ const Sidebar = () => {
       const otherUser = chat.users.find((u) => u._id !== user._id);
       const isFriend = friends.some(f => f._id === otherUser?._id);
       return matchesSearch && isFriend;
-    } else if (activeTab === 'blocked') {
-      // Show chats with blocked users only
-      const otherUser = chat.users.find((u) => u._id !== user._id);
-      const isBlocked = blockedUsers.some(b => b._id === otherUser?._id);
-      return matchesSearch && isBlocked;
+    } else if (activeTab === 'groups') {
+      // Show only group chats
+      return matchesSearch && !!chat.isGroupChat;
     }
     return matchesSearch;
   });
@@ -305,6 +439,26 @@ const Sidebar = () => {
                 >
                   <Plus className="w-5 h-5 text-secondary" />
                 </button>
+
+                {/* Notifications Bell */}
+                <div className="relative">
+                  <button
+                    onClick={async () => { setNotifOpen(true); await fetchInvites(true); await markAllInvitesRead(); await fetchPendingSent(true); }}
+                    className="p-2 rounded-full hover-surface transition-colors relative"
+                    title="Notifications"
+                  >
+                    <Bell className="w-5 h-5 text-secondary" />
+                    {(invites.filter((i) => !i.read).length + (pendingSent?.length || 0)) > 0 && (
+                      <span className="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-[10px] leading-none px-1.5 py-0.5 rounded-full">
+                        {invites.filter((i) => !i.read).length + (pendingSent?.length || 0)}
+                      </span>
+                    )}
+                  </button>
+                  {/* Dedicated modal for notifications */}
+                  {notifOpen && (
+                    <NotificationsModal open={notifOpen} onClose={() => setNotifOpen(false)} />
+                  )}
+                </div>
 
                 {/* Profile Avatar */}
                 <button
@@ -390,10 +544,10 @@ const Sidebar = () => {
                     Friends
                   </button>
                   <button
-                    onClick={() => setActiveTab('blocked')}
-                    className={`px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${activeTab === 'blocked' ? 'btn-primary text-white' : 'bg-muted text-secondary hover-surface'}`}
+                    onClick={() => setActiveTab('groups')}
+                    className={`px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${activeTab === 'groups' ? 'btn-primary text-white' : 'bg-muted text-secondary hover-surface'}`}
                   >
-                    Blocked
+                    Groups
                   </button>
                 </div>
               </>

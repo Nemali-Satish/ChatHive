@@ -13,6 +13,7 @@ export const API_ENDPOINTS = {
   SEARCH_USERS: '/api/users/search',
   UPDATE_PROFILE: '/api/users/profile',
   UPDATE_AVATAR: '/api/users/avatar',
+  UPDATE_PRIVACY: '/api/users/privacy',
   GET_USER: (id) => `/api/users/${id}`,
   ADD_FRIEND: (userId) => `/api/users/friends/${userId}`,
   REMOVE_FRIEND: (userId) => `/api/users/friends/${userId}`,
@@ -42,6 +43,14 @@ export const API_ENDPOINTS = {
   GET_MESSAGES: (chatId) => `/api/messages/${chatId}`,
   MARK_AS_READ: (chatId) => `/api/messages/read/${chatId}`,
   DELETE_MESSAGE: (messageId) => `/api/messages/${messageId}`,
+  
+  // Invites
+  INVITES_PENDING: '/api/invites/pending',
+  INVITES_SENT: '/api/invites/sent',
+  INVITES_CREATE: '/api/invites',
+  INVITE_ACCEPT: (id) => `/api/invites/${id}/accept`,
+  INVITE_DECLINE: (id) => `/api/invites/${id}/decline`,
+  INVITE_READ: (id) => `/api/invites/${id}/read`,
 };
 
 export const SOCKET_EVENTS = {
@@ -63,4 +72,5 @@ export const SOCKET_EVENTS = {
   USER_UNBLOCKED: 'user unblocked',
   GROUP_NOTIFICATION: 'group notification',
   GROUP_UPDATED: 'group updated',
+  INVITES_UPDATED: 'invites updated',
 };

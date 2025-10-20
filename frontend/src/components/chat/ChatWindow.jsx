@@ -1,13 +1,12 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { MoreVertical, Phone, Video, Info, ArrowLeft, Trash2, Eraser, Ban, Unlock, Bell, BellOff, LogOut } from 'lucide-react';
+import { MoreVertical, Phone, Video, Info, ArrowLeft, Trash2, Eraser, Ban, Unlock, LogOut, Lock } from 'lucide-react';
 import Avatar from '../ui/Avatar';
 import MessageList from './MessageList';
 import MessageInput from './MessageInput';
 import useChatStore from '../../store/useChatStore';
 import useAuthStore from '../../store/useAuthStore';
 import { getChatName, getChatAvatar, getOtherUser, isUserOnline } from '../../utils/helpers';
-import api from '../../services/api';
-import { API_ENDPOINTS } from '../../config/constants';
+// Network calls are handled via Zustand store actions
 import toast from 'react-hot-toast';
 import { getSocket } from '../../services/socket';
 import { SOCKET_EVENTS } from '../../config/constants';
@@ -16,7 +15,22 @@ import { useConfirmModal } from '../../context/ConfirmProvider';
 const ChatWindow = () => {
   const user = useAuthStore((state) => state.user);
   const updateUser = useAuthStore((state) => state.updateUser);
-  const { selectedChat, setSelectedChat, messages, setMessages, onlineUsers, setInfoPanelOpen } = useChatStore();
+  const fetchMe = useAuthStore((state) => state.fetchMe);
+  const {
+    selectedChat,
+    setSelectedChat,
+    messages,
+    setMessages,
+    onlineUsers,
+    setInfoPanelOpen,
+    fetchMessages,
+    clearChatAsync,
+    deleteChatAsync,
+    leaveGroupAsync,
+    userBlockAsync,
+    userUnblockAsync,
+    fetchUserDataAsync,
+  } = useChatStore();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef(null);
   const [loading, setLoading] = useState(false);
@@ -36,25 +50,26 @@ const ChatWindow = () => {
   const cannotMessage = !selectedChat?.isGroupChat && (isBlocked || blockedByOther);
 
   useEffect(() => {
-    if (selectedChat) {
-      // Clear previous messages when switching chats
-      setMessages([]);
-      fetchMessages();
-      // Notify via socket that I have viewed this chat
-      try {
-        const s = socket;
-        if (s && selectedChat?._id && user?._id) {
-          s.emit(SOCKET_EVENTS.MESSAGE_READ, { chatId: selectedChat._id, userId: user._id });
-        }
-      } catch {}
-    }
-  }, [selectedChat?._id]); // Only re-run when chat ID changes
+    if (!selectedChat) return;
+    // For placeholder chats (pending invite), do not try to fetch messages yet
+    if (selectedChat.pendingInvite) return;
+    // Clear previous messages when switching chats
+    setMessages([]);
+    loadMessages();
+    // Notify via socket that I have viewed this chat
+    try {
+      const s = socket;
+      if (s && selectedChat?._id && user?._id) {
+        s.emit(SOCKET_EVENTS.MESSAGE_READ, { chatId: selectedChat._id, userId: user._id });
+      }
+    } catch {}
+  }, [selectedChat?._id]);
 
   // Refresh current user snapshot so blockedUsers is always up to date on chat change
   useEffect(() => {
     (async () => {
       try {
-        const { data } = await api.get(API_ENDPOINTS.GET_ME);
+        const { data } = await fetchMe();
         if (data.success) updateUser(data.data);
       } catch { }
     })();
@@ -67,7 +82,7 @@ const ChatWindow = () => {
         if (selectedChat && !selectedChat.isGroupChat) {
           const other = getOtherUser(selectedChat, user?._id);
           if (other?._id) {
-            const res = await api.get(API_ENDPOINTS.GET_USER(other._id));
+            const res = await fetchUserDataAsync(other._id);
             if (res.data?.success) {
               setOtherInfo(res.data.data);
               const theirBlocked = (res.data.data?.blockedUsers || []).some((id) => (id?._id || id) === user?._id);
@@ -116,12 +131,18 @@ const ChatWindow = () => {
     return () => document.removeEventListener('mousedown', onClickOutside);
   }, []);
 
-  const fetchMessages = async () => {
+  const loadMessages = async () => {
     if (!selectedChat) return;
+    if (selectedChat.pendingInvite) return;
+    // Gate: if private non-friend DM, don't load messages
+    if (!selectedChat.isGroupChat && otherInfo && otherInfo.visibility === 'private') {
+      const amFriend = (otherInfo.friends || []).some((id) => (id?._id || id) === user?._id);
+      if (!amFriend) return;
+    }
 
     setLoading(true);
     try {
-      const { data } = await api.get(API_ENDPOINTS.GET_MESSAGES(selectedChat._id));
+      const { data } = await fetchMessages(selectedChat._id);
       if (data.success) {
         setMessages(data.data || []);
         // After messages load, signal read again to be safe
@@ -172,7 +193,7 @@ const ChatWindow = () => {
       variant: 'danger',
       confirmLabel: 'Clear',
       onConfirm: async () => {
-        await api.delete(API_ENDPOINTS.CLEAR_CHAT(selectedChat._id));
+        await clearChatAsync(selectedChat._id);
         setMessages([]);
         window.dispatchEvent(new Event('refresh-chats'));
         toast.success('Chat cleared');
@@ -188,7 +209,7 @@ const ChatWindow = () => {
       variant: 'danger',
       confirmLabel: 'Delete',
       onConfirm: async () => {
-        await api.delete(API_ENDPOINTS.DELETE_CHAT(selectedChat._id));
+        await deleteChatAsync(selectedChat._id);
         window.dispatchEvent(new Event('refresh-chats'));
         setSelectedChat(null);
         toast.success('Chat deleted');
@@ -212,12 +233,12 @@ const ChatWindow = () => {
           // Optimistic update
           setOptimisticBlocked(blocking);
           if (isBlocked) {
-            await api.delete(API_ENDPOINTS.UNBLOCK_USER(otherUser._id));
+            await userUnblockAsync(otherUser._id);
             toast.success('User unblocked');
             const next = (user?.blockedUsers || []).filter((id) => (id?._id || id) !== otherUser._id);
             updateUser({ blockedUsers: next });
           } else {
-            await api.post(API_ENDPOINTS.BLOCK_USER(otherUser._id));
+            await userBlockAsync(otherUser._id);
             toast.success('User blocked');
             const next = [...(user?.blockedUsers || []), otherUser._id];
             updateUser({ blockedUsers: next });
@@ -225,7 +246,7 @@ const ChatWindow = () => {
           window.dispatchEvent(new Event('refresh-chats'));
           // Reconcile with server
           try {
-            const { data } = await api.get(API_ENDPOINTS.GET_ME);
+            const { data } = await fetchMe();
             if (data.success) {
               updateUser(data.data);
               setOptimisticBlocked(null);
@@ -242,22 +263,6 @@ const ChatWindow = () => {
   };
 
   // Group actions
-  const handleToggleMuteGroup = async () => {
-    if (!selectedChat?.isGroupChat) return;
-    try {
-      const muted = Array.isArray(selectedChat.mutedBy) && selectedChat.mutedBy.some((id) => (id?._id || id) === user._id);
-      await api.put(API_ENDPOINTS.GROUP_MUTE, { chatId: selectedChat._id, mute: !muted });
-      const nextMutedBy = muted
-        ? (selectedChat.mutedBy || []).filter((id) => (id?._id || id) !== user._id)
-        : [ ...(selectedChat.mutedBy || []), user._id ];
-      useChatStore.getState().setSelectedChat({ ...selectedChat, mutedBy: nextMutedBy });
-      window.dispatchEvent(new Event('refresh-chats'));
-      toast.success(muted ? 'Unmuted group' : 'Muted group');
-      setMenuOpen(false);
-    } catch (e) {
-      toast.error(e.response?.data?.message || 'Failed to update mute');
-    }
-  };
 
   const confirmLeaveGroup = () => {
     if (!selectedChat?.isGroupChat) return;
@@ -267,7 +272,7 @@ const ChatWindow = () => {
       variant: 'danger',
       confirmLabel: 'Exit',
       onConfirm: async () => {
-        await api.put(API_ENDPOINTS.GROUP_LEAVE, { chatId: selectedChat._id });
+        await leaveGroupAsync(selectedChat._id);
         window.dispatchEvent(new Event('refresh-chats'));
         setSelectedChat(null);
         toast.success('Exited group');
@@ -275,6 +280,11 @@ const ChatWindow = () => {
       },
     });
   };
+
+  const isPrivateNonFriend = (
+    selectedChat && !selectedChat.isGroupChat && otherInfo && otherInfo.visibility === 'private' &&
+    !(otherInfo.friends || []).some((id) => (id?._id || id) === user?._id)
+  );
 
   return (
     <div className="flex-1 flex flex-col bg-app">
@@ -339,20 +349,10 @@ const ChatWindow = () => {
                   </button>
                 )}
                 {selectedChat.isGroupChat && (
-                  <>
-                    <button onClick={handleToggleMuteGroup} className="w-full px-4 py-2 text-left text-sm hover-surface flex items-center gap-2 text-primary">
-                      {(Array.isArray(selectedChat.mutedBy) && selectedChat.mutedBy.some((id) => (id?._id || id) === user._id)) ? (
-                        <Bell className="w-4 h-4" />
-                      ) : (
-                        <BellOff className="w-4 h-4" />
-                      )}
-                      {(Array.isArray(selectedChat.mutedBy) && selectedChat.mutedBy.some((id) => (id?._id || id) === user._id)) ? 'Unmute group' : 'Mute group'}
-                    </button>
-                    <button onClick={confirmLeaveGroup} className="w-full px-4 py-2 text-left text-sm hover-surface flex items-center gap-2" style={{ color: '#ef4444' }}>
-                      <LogOut className="w-4 h-4" />
-                      Exit group
-                    </button>
-                  </>
+                  <button onClick={confirmLeaveGroup} className="w-full px-4 py-2 text-left text-sm hover-surface flex items-center gap-2" style={{ color: '#ef4444' }}>
+                    <LogOut className="w-4 h-4" />
+                    Exit group
+                  </button>
                 )}
               </div>
             )}
@@ -360,11 +360,28 @@ const ChatWindow = () => {
         </div>
       </div>
 
-      {/* Messages */}
-      <MessageList messages={messages} loading={loading} />
+      {/* Content */}
+      {isPrivateNonFriend ? (
+        <div className="flex-1 flex items-center justify-center px-6">
+          <div className="max-w-md w-full text-center">
+            <div className="w-16 h-16 rounded-2xl mx-auto flex items-center justify-center bg-yellow-500/10 mb-4">
+              <Lock className="w-7 h-7 text-yellow-600" />
+            </div>
+            <h3 className="text-lg font-semibold text-primary">This profile is private</h3>
+            <p className="text-secondary text-sm mt-1">Send a request to start a conversation. They’ll need to accept before you can chat.</p>
+            <div className="mt-5 flex items-center justify-center gap-3">
+              <RequestInviteButton toUserId={otherUser?._id} />
+              <button onClick={handleBack} className="btn btn-outline">Back</button>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* Messages */}
+          <MessageList messages={messages} loading={loading} />
 
-      {/* Input or Blocked Actions */}
-      {!selectedChat.isGroupChat && cannotMessage ? (
+          {/* Input or Blocked Actions */}
+          {!selectedChat.isGroupChat && cannotMessage ? (
         <div className="bg-panel backdrop-blur border-t border-default rounded-t-2xl">
           {/* Banner */}
           <div className="px-5 pt-4">
@@ -406,11 +423,94 @@ const ChatWindow = () => {
             </div>
           </div>
         </div>
-      ) : (
-        <MessageInput />
+          ) : (
+            <MessageInput />
+          )}
+        </>
       )}
     </div>
   );
 };
+
+function RequestInviteButton({ toUserId }) {
+  const createInviteAsync = useChatStore((s) => s.createInviteAsync);
+  const [loading, setLoading] = React.useState(false);
+  const [pending, setPending] = React.useState(() => {
+    try {
+      const raw = localStorage.getItem('pendingSentInvites');
+      const map = raw ? JSON.parse(raw) : {};
+      return !!map[toUserId];
+    } catch { return false; }
+  });
+
+  // If friendship established elsewhere, allow sending again by clearing pending marker
+  const user = useAuthStore((s) => s.user);
+  const { fetchUserDataAsync } = useChatStore();
+  React.useEffect(() => {
+    (async () => {
+      if (!toUserId || !pending) return;
+      try {
+        const res = await fetchUserDataAsync(toUserId);
+        const data = res?.data?.data;
+        const amFriend = (data?.friends || []).some((id) => (id?._id || id) === user?._id);
+        if (amFriend) {
+          try {
+            const raw = localStorage.getItem('pendingSentInvites');
+            const map = raw ? JSON.parse(raw) : {};
+            delete map[toUserId];
+            localStorage.setItem('pendingSentInvites', JSON.stringify(map));
+            setPending(false);
+            try { window.dispatchEvent(new Event('pending-invite-updated')); } catch {}
+          } catch {}
+          // Also clear from pendingFriends if present
+          try {
+            const pfRaw = localStorage.getItem('pendingFriends');
+            const pf = pfRaw ? JSON.parse(pfRaw) : {};
+            if (pf[toUserId]) {
+              delete pf[toUserId];
+              localStorage.setItem('pendingFriends', JSON.stringify(pf));
+              try { window.dispatchEvent(new Event('pending-friend-updated')); } catch {}
+            }
+          } catch {}
+        }
+      } catch {}
+    })();
+  }, [toUserId, pending, user?._id]);
+
+  const onClick = async () => {
+    if (!toUserId || pending) return;
+    setLoading(true);
+    try {
+      await createInviteAsync({ type: 'message', to: toUserId });
+      // mark pending
+      try {
+        const raw = localStorage.getItem('pendingSentInvites');
+        const map = raw ? JSON.parse(raw) : {};
+        map[toUserId] = Date.now();
+        localStorage.setItem('pendingSentInvites', JSON.stringify(map));
+      } catch {}
+      // Mark pending friend as well for UI purposes
+      try {
+        const pfRaw = localStorage.getItem('pendingFriends');
+        const pf = pfRaw ? JSON.parse(pfRaw) : {};
+        pf[toUserId] = Date.now();
+        localStorage.setItem('pendingFriends', JSON.stringify(pf));
+        try { window.dispatchEvent(new Event('pending-friend-updated')); } catch {}
+      } catch {}
+      setPending(true);
+      try { window.dispatchEvent(new Event('pending-invite-updated')); } catch {}
+      toast.success('Request sent');
+    } catch {
+      toast.error('Failed to send request');
+    } finally {
+      setLoading(false);
+    }
+  };
+  return (
+    <button onClick={onClick} className="btn btn-primary" disabled={loading || pending}>
+      {loading ? 'Sending...' : pending ? 'Request sent' : 'Send request'}
+    </button>
+  );
+}
 
 export default ChatWindow;

@@ -208,3 +208,5 @@ p, span, small, label { color: var(--text-primary); }
 .scrollbar-hide::-webkit-scrollbar {
   display: none;
 }
+
+.chat-input:focus-visible { outline: none; }

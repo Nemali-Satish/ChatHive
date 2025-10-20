@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Search, Users, MessageCircle } from 'lucide-react';
+import { ArrowLeft, Search, Users, MessageCircle, Send } from 'lucide-react';
 import Avatar from '../ui/Avatar';
 import GroupCreateModal from './GroupCreateModal';
-import api from '../../services/api';
-import { API_ENDPOINTS } from '../../config/constants';
+// Network handled via store actions
 import toast from 'react-hot-toast';
 import useChatStore from '../../store/useChatStore';
 import useAuthStore from '../../store/useAuthStore';
@@ -14,9 +13,13 @@ export default function NewChatView({ onBack, chats = [], showHeader = true }) {
   const [loading, setLoading] = useState(false);
   const [creatingChat, setCreatingChat] = useState(null);
   const [showNewChatSearch, setShowNewChatSearch] = useState(false);
+  const searchUsersAsync = useChatStore((s) => s.searchUsersAsync);
+  const listUsersAsync = useChatStore((s) => s.listUsersAsync);
+  const createChatAsync = useChatStore((s) => s.createChatAsync);
   const [showGroupModal, setShowGroupModal] = useState(false);
   const { setSelectedChat, addChat } = useChatStore();
   const user = useAuthStore((state) => state.user);
+  const createInviteAsync = useChatStore((s) => s.createInviteAsync);
 
   const getOtherUser = (chat, myId) => chat?.users?.find((u) => u?._id !== myId) || null;
 
@@ -37,10 +40,10 @@ export default function NewChatView({ onBack, chats = [], showHeader = true }) {
       const q = searchQuery.trim();
       let data;
       if (q.length > 0) {
-        const res = await api.get(`${API_ENDPOINTS.SEARCH_USERS}?query=${encodeURIComponent(q)}`);
+        const res = await searchUsersAsync(q);
         data = res.data;
       } else {
-        const res = await api.get(API_ENDPOINTS.GET_USERS);
+        const res = await listUsersAsync();
         data = res.data;
       }
       if (data?.success) {
@@ -59,11 +62,13 @@ export default function NewChatView({ onBack, chats = [], showHeader = true }) {
   const handleSelectUser = async (userId) => {
     setCreatingChat(userId);
     try {
-      const response = await api.post(API_ENDPOINTS.CREATE_CHAT, { userId });
+      const response = await createChatAsync(userId);
       if (response.data.success) {
         addChat(response.data.data);
         setSelectedChat(response.data.data);
         toast.success('Chat created successfully');
+        // Ensure sidebar chat list updates immediately
+        try { window.dispatchEvent(new Event('refresh-chats')); } catch {}
         onBack?.();
       }
     } catch (error) {
@@ -177,28 +182,44 @@ export default function NewChatView({ onBack, chats = [], showHeader = true }) {
                   <p className="text-sm font-bold text-secondary">{letter}</p>
                 </div>
                 {groupedUsers[letter].map((contact) => (
-                  <button
+                  <div
                     key={contact?._id || `${(contact?.email || contact?.phone || Math.random()).toString()}-${letter}`}
-                    onClick={() => handleSelectUser(contact._id)}
-                    disabled={creatingChat === contact._id}
                     className="w-full flex items-center gap-3 p-3 px-4 hover-surface transition-colors disabled:opacity-50"
                   >
-                    <Avatar src={contact.avatar?.url} alt={contact.name} size="lg" />
-                    <div className="flex-1 text-left min-w-0">
-                      <p className="font-medium text-primary truncate">
-                        {contact?.name || contact?.email || contact?.phone || 'Unknown User'}
-                        {contact._id === user._id && (
-                          <span className="text-secondary"> (You)</span>
-                        )}
-                      </p>
-                      <p className="text-sm text-secondary truncate">
-                        {contact?.bio || 'Hey there! I am using ChatHive'}
-                      </p>
-                    </div>
+                    <button onClick={() => handleSelectUser(contact._id)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
+                      <Avatar src={contact.avatar?.url} alt={contact.name} size="lg" />
+                      <div className="flex-1 text-left min-w-0">
+                        <p className="font-medium text-primary truncate">
+                          {contact?.name || contact?.email || contact?.phone || 'Unknown User'}
+                          {contact._id === user._id && (
+                            <span className="text-secondary"> (You)</span>
+                          )}
+                        </p>
+                        <p className="text-sm text-secondary truncate">
+                          {contact?.bio || 'Hey there! I am using ChatHive'}
+                        </p>
+                      </div>
+                    </button>
+                    <button
+                      className="p-2 rounded-md hover-surface"
+                      title="Send request"
+                      aria-label="Send request"
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        try {
+                          await createInviteAsync({ type: 'message', to: contact._id });
+                          toast.success('Request sent');
+                        } catch {
+                          toast.error('Failed to send request');
+                        }
+                      }}
+                    >
+                      <Send className="w-4 h-4" />
+                    </button>
                     {creatingChat === contact._id && (
                       <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
                     )}
-                  </button>
+                  </div>
                 ))}
               </div>
             ))}

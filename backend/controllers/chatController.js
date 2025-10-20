@@ -38,6 +38,17 @@ export const accessChat = asyncHandler(async (req, res) => {
       data: isChat[0],
     });
   } else {
+    // Enforce privacy: if target user is private and not a friend, require invite instead of creating chat
+    const target = await User.findById(userId).select('visibility friends');
+    if (!target) {
+      res.status(404);
+      throw new Error('User not found');
+    }
+    const isFriend = (target.friends || []).some((id) => id.toString() === req.user._id.toString());
+    if (target.visibility === 'private' && !isFriend) {
+      res.status(403);
+      return res.json({ success: false, code: 'PRIVATE_USER', requiresInvite: true, message: 'User is private. Send invite first.' });
+    }
     const chatData = {
       chatName: 'sender',
       isGroupChat: false,
@@ -110,6 +121,22 @@ export const createGroupChat = asyncHandler(async (req, res) => {
   }
 
   usersArray.push(req.user._id);
+
+  // Enforce privacy for each invited member (excluding the creator)
+  for (const uid of usersArray) {
+    const idStr = uid.toString();
+    if (idStr === req.user._id.toString()) continue;
+    const target = await User.findById(uid).select('visibility friends');
+    if (!target) {
+      res.status(404);
+      throw new Error('One of the users not found');
+    }
+    const isFriend = (target.friends || []).some((fid) => fid.toString() === req.user._id.toString());
+    if (target.visibility === 'private' && !isFriend) {
+      res.status(403);
+      return res.json({ success: false, code: 'PRIVATE_USER', requiresInvite: true, message: 'A selected user is private. Send group invite first.' });
+    }
+  }
 
   const groupChat = await Chat.create({
     chatName: name,
@@ -189,9 +216,21 @@ export const addToGroup = asyncHandler(async (req, res) => {
     throw new Error('Only admin can add users');
   }
 
+  // Enforce privacy: if target user is private and requester is not a friend, block and require invite
+  const target = await User.findById(userId).select('visibility friends');
+  if (!target) {
+    res.status(404);
+    throw new Error('User not found');
+  }
+  const isFriend = (target.friends || []).some((id) => id.toString() === req.user._id.toString());
+  if (target.visibility === 'private' && !isFriend) {
+    res.status(403);
+    return res.json({ success: false, code: 'PRIVATE_USER', requiresInvite: true, message: 'User is private. Send group invite first.' });
+  }
+
   const added = await Chat.findByIdAndUpdate(
     chatId,
-    { $push: { users: userId } },
+    { $addToSet: { users: userId } },
     { new: true }
   )
     .populate('users', '-password')

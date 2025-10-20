@@ -9,7 +9,6 @@ import {
   updateGroupAvatar,
   clearChat,
   deleteChat,
-  toggleMuteGroup,
   leaveGroup,
   addAdmin,
   removeAdmin,
@@ -28,7 +27,6 @@ router.put('/group/rename', protect, requireProfileCompleted, renameGroup);
 router.put('/group/add', protect, requireProfileCompleted, addToGroup);
 router.put('/group/remove', protect, requireProfileCompleted, removeFromGroup);
 router.put('/group/avatar', protect, requireProfileCompleted, uploadMemory.single('avatar'), updateGroupAvatar);
-router.put('/group/mute', protect, requireProfileCompleted, toggleMuteGroup);
 router.put('/group/leave', protect, requireProfileCompleted, leaveGroup);
 router.put('/group/admin/add', protect, requireProfileCompleted, addAdmin);
 router.put('/group/admin/remove', protect, requireProfileCompleted, removeAdmin);

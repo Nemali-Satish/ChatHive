@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import api from '../../services/api';
-import { API_ENDPOINTS } from '../../config/constants';
+import useChatStore from '../../store/useChatStore';
 import toast from 'react-hot-toast';
 import Avatar from '../ui/Avatar';
 
@@ -9,6 +8,8 @@ export default function EditGroupModal({ open, onClose, chat }) {
   const [description, setDescription] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [avatarFile, setAvatarFile] = useState(null);
+  const updateGroupInfoAsync = useChatStore((s) => s.updateGroupInfoAsync);
+  const updateGroupAvatarAsync = useChatStore((s) => s.updateGroupAvatarAsync);
 
   useEffect(() => {
     if (open && chat) {
@@ -32,15 +33,12 @@ export default function EditGroupModal({ open, onClose, chat }) {
     try {
       let updatedChat = chat;
       if (payload.name || payload.description) {
-        const { data } = await api.put(API_ENDPOINTS.GROUP_INFO_UPDATE, payload);
+        const { data } = await updateGroupInfoAsync(payload);
         if (!data?.success) throw new Error('Failed to update group info');
         updatedChat = data.data;
       }
       if (avatarFile) {
-        const fd = new FormData();
-        fd.append('avatar', avatarFile);
-        fd.append('chatId', chat._id);
-        const { data: up } = await api.put(API_ENDPOINTS.UPDATE_GROUP_AVATAR, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+        const { data: up } = await updateGroupAvatarAsync({ chatId: chat._id, file: avatarFile });
         if (!up?.success) throw new Error('Failed to update avatar');
         updatedChat = { ...updatedChat, groupAvatar: up.data };
       }

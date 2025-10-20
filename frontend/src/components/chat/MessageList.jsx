@@ -7,8 +7,6 @@ import useAuthStore from '../../store/useAuthStore';
 import useChatStore from '../../store/useChatStore';
 import { groupMessagesByDate, getOtherUser } from '../../utils/helpers';
 import { Check, CheckCheck, UserPlus, Ban } from 'lucide-react';
-import api from '../../services/api';
-import { API_ENDPOINTS } from '../../config/constants';
 import toast from 'react-hot-toast';
 
 const MessageList = ({ messages, loading }) => {
@@ -19,6 +17,9 @@ const MessageList = ({ messages, loading }) => {
   const [showUnknownBanner, setShowUnknownBanner] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
+  const fetchUserDataAsync = useChatStore((s) => s.fetchUserDataAsync);
+  const userAddFriendAsync = useChatStore((s) => s.userAddFriendAsync);
+  const userBlockAsync = useChatStore((s) => s.userBlockAsync);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -32,7 +33,7 @@ const MessageList = ({ messages, loading }) => {
     // Fetch current user data to check friends/blocked status
     const fetchCurrentUser = async () => {
       try {
-        const { data } = await api.get(API_ENDPOINTS.GET_USER(user._id));
+        const { data } = await fetchUserDataAsync(user._id);
         if (data.success) {
           setCurrentUser(data.data);
         }
@@ -59,12 +60,12 @@ const MessageList = ({ messages, loading }) => {
     if (!otherUser) return;
     setActionLoading(true);
     try {
-      const { data } = await api.post(API_ENDPOINTS.ADD_FRIEND(otherUser._id));
+      const { data } = await userAddFriendAsync(otherUser._id);
       if (data.success) {
         toast.success('Friend added successfully');
         setShowUnknownBanner(false);
         // Refresh user data to update friends list
-        const userData = await api.get(API_ENDPOINTS.GET_USER(user._id));
+        const userData = await fetchUserDataAsync(user._id);
         if (userData.data.success) {
           setCurrentUser(userData.data.data);
         }
@@ -80,7 +81,7 @@ const MessageList = ({ messages, loading }) => {
     if (!otherUser) return;
     setActionLoading(true);
     try {
-      const { data } = await api.post(API_ENDPOINTS.BLOCK_USER(otherUser._id));
+      const { data } = await userBlockAsync(otherUser._id);
       if (data.success) {
         toast.success('User blocked successfully');
         setShowUnknownBanner(false);
@@ -90,7 +91,7 @@ const MessageList = ({ messages, loading }) => {
         // Notify Sidebar to refresh lists
         window.dispatchEvent(new Event('refresh-chats'));
         // Refresh user data to update blocked list
-        const userData = await api.get(API_ENDPOINTS.GET_USER(user._id));
+        const userData = await fetchUserDataAsync(user._id);
         if (userData.data.success) {
           setCurrentUser(userData.data.data);
         }

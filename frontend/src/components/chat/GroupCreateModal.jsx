@@ -1,7 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import Avatar from '../ui/Avatar';
-import api from '../../services/api';
-import { API_ENDPOINTS } from '../../config/constants';
 import toast from 'react-hot-toast';
 import useAuthStore from '../../store/useAuthStore';
 import useChatStore from '../../store/useChatStore';
@@ -9,6 +7,11 @@ import useChatStore from '../../store/useChatStore';
 export default function GroupCreateModal({ open, onClose }) {
   const me = useAuthStore((s) => s.user);
   const { addChat, setSelectedChat } = useChatStore();
+  const searchUsersAsync = useChatStore((s) => s.searchUsersAsync);
+  const listUsersAsync = useChatStore((s) => s.listUsersAsync);
+  const createGroupAsync = useChatStore((s) => s.createGroupAsync);
+  const updateGroupInfoAsync = useChatStore((s) => s.updateGroupInfoAsync);
+  const updateGroupAvatarAsync = useChatStore((s) => s.updateGroupAvatarAsync);
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -34,9 +37,9 @@ export default function GroupCreateModal({ open, onClose }) {
       let res;
       const q = search.trim();
       if (q.length > 0) {
-        res = await api.get(`${API_ENDPOINTS.SEARCH_USERS}?query=${encodeURIComponent(q)}`);
+        res = await searchUsersAsync(q);
       } else {
-        res = await api.get(API_ENDPOINTS.GET_USERS);
+        res = await listUsersAsync();
       }
       const list = Array.isArray(res.data?.data) ? res.data.data : [];
       setUsers(list.filter((u) => u?._id !== me?._id));
@@ -62,14 +65,14 @@ export default function GroupCreateModal({ open, onClose }) {
     try {
       // Create group
       const payload = { name: name.trim(), users: JSON.stringify(selected) };
-      const { data } = await api.post(API_ENDPOINTS.CREATE_GROUP, payload);
+      const { data } = await createGroupAsync(payload);
       if (!data?.success) throw new Error('Failed to create group');
       let group = data.data;
 
       // Optional: set description via info endpoint if provided
       if (description.trim().length > 0) {
         try {
-          const infoRes = await api.put(API_ENDPOINTS.GROUP_INFO_UPDATE, { chatId: group._id, description: description.trim() });
+          const infoRes = await updateGroupInfoAsync({ chatId: group._id, description: description.trim() });
           if (infoRes.data?.success) group = infoRes.data.data;
         } catch {}
       }
@@ -77,10 +80,7 @@ export default function GroupCreateModal({ open, onClose }) {
       // Optional: upload avatar
       if (avatarFile) {
         try {
-          const fd = new FormData();
-          fd.append('avatar', avatarFile);
-          fd.append('chatId', group._id);
-          const up = await api.put(API_ENDPOINTS.UPDATE_GROUP_AVATAR, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+          const up = await updateGroupAvatarAsync({ chatId: group._id, file: avatarFile });
           if (up.data?.success) {
             group = { ...group, groupAvatar: up.data.data };
           }

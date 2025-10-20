@@ -1,17 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { X, Search, UserPlus, Loader2 } from 'lucide-react';
-import api from '../../services/api';
-import { API_ENDPOINTS } from '../../config/constants';
+import useChatStore from '../../store/useChatStore';
 import Avatar from '../ui/Avatar';
 import Loader from '../ui/Loader';
 import toast from 'react-hot-toast';
-import useChatStore from '../../store/useChatStore';
 
 const SearchUsers = ({ onClose }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [creatingChat, setCreatingChat] = useState(null);
+  const searchUsersAsync = useChatStore((s) => s.searchUsersAsync);
+  const createChatAsync = useChatStore((s) => s.createChatAsync);
   const { setSelectedChat, addChat } = useChatStore();
 
   useEffect(() => {
@@ -28,7 +28,7 @@ const SearchUsers = ({ onClose }) => {
   const searchUsers = async () => {
     setLoading(true);
     try {
-      const { data } = await api.get(`${API_ENDPOINTS.SEARCH_USERS}?search=${searchQuery}`);
+      const { data } = await searchUsersAsync(searchQuery);
       if (data.success) {
         setUsers(data.data);
       }
@@ -42,9 +42,7 @@ const SearchUsers = ({ onClose }) => {
   const handleSelectUser = async (userId) => {
     setCreatingChat(userId);
     try {
-      console.log('Creating chat with user:', userId);
-      const response = await api.post(API_ENDPOINTS.CREATE_CHAT, { userId });
-      console.log('Chat response:', response.data);
+      const response = await createChatAsync(userId);
       
       if (response.data.success) {
         addChat(response.data.data);

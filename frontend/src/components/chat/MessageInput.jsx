@@ -4,14 +4,15 @@ import Button from '../ui/Button';
 import useChatStore from '../../store/useChatStore';
 import useAuthStore from '../../store/useAuthStore';
 import { getOtherUser } from '../../utils/helpers';
-import api from '../../services/api';
-import { API_ENDPOINTS } from '../../config/constants';
+// Network handled via store actions
 import { getSocket } from '../../services/socket';
 import { SOCKET_EVENTS } from '../../config/constants';
 import toast from 'react-hot-toast';
 
 const MessageInput = () => {
-  const { selectedChat, addMessage } = useChatStore();
+  const { selectedChat } = useChatStore();
+  const createInviteAsync = useChatStore((s) => s.createInviteAsync);
+  const sendMessageAsync = useChatStore((s) => s.sendMessageAsync);
   const user = useAuthStore((state) => state.user);
   const [message, setMessage] = useState('');
   const [attachments, setAttachments] = useState([]);
@@ -117,8 +118,10 @@ const MessageInput = () => {
         return;
       }
 
-      const { data } = await api.post(API_ENDPOINTS.SEND_MESSAGE, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
+      const { data } = await sendMessageAsync({
+        chatId: selectedChat._id,
+        content: message,
+        attachments,
         onUploadProgress: (evt) => {
           if (!evt.total) return;
           const percent = Math.round((evt.loaded * 100) / evt.total);
@@ -127,7 +130,6 @@ const MessageInput = () => {
       });
 
       if (data.success) {
-        addMessage(data.data);
         socket.emit(SOCKET_EVENTS.NEW_MESSAGE, data.data);
         setMessage('');
         setAttachments([]);
@@ -136,7 +138,21 @@ const MessageInput = () => {
         socket.emit(SOCKET_EVENTS.STOP_TYPING, selectedChat._id);
       }
     } catch (error) {
-      toast.error('Failed to send message');
+      const code = error?.response?.data?.code;
+      const requiresInvite = error?.response?.data?.requiresInvite;
+      if (code === 'PRIVATE_USER' && requiresInvite && selectedChat && !selectedChat.isGroupChat) {
+        const target = getOtherUser(selectedChat, user?._id);
+        if (target && window.confirm('This user is private. Send a message request?')) {
+          try {
+            await createInviteAsync({ type: 'message', to: target._id });
+            toast.success('Invite sent');
+          } catch {
+            toast.error('Failed to send invite');
+          }
+        }
+      } else {
+        toast.error('Failed to send message');
+      }
     } finally {
       setLoading(false);
     }
@@ -207,15 +223,15 @@ const MessageInput = () => {
         </button>
 
         <div className="flex-1 bg-header rounded-lg flex items-center px-3">
-          <input
-            type="text"
-            value={message}
-            onChange={handleTyping}
-            onKeyPress={handleKeyPress}
-            placeholder="Type a message"
-            className="flex-1 py-2.5 bg-transparent focus:outline-none text-sm"
-            style={{ color: 'var(--text-primary)' }}
-          />
+         <input
+  type="text"
+  value={message}
+  onChange={handleTyping}
+  onKeyDown={handleKeyPress}
+  placeholder="Type a message"
+  className="flex-1 py-2.5 bg-transparent outline-none text-sm chat-input"
+  style={{ color: 'var(--text-primary)' }}
+/>
           <button
             type="button"
             className="p-1 rounded-full hover-surface transition-colors"

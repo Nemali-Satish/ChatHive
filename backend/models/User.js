@@ -71,6 +71,11 @@ const userSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
     }],
+    visibility: {
+      type: String,
+      enum: ['public', 'private'],
+      default: 'public',
+    },
   },
   {
     timestamps: true,

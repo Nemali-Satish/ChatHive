@@ -2,8 +2,7 @@ import { useMemo, useReducer, useRef, useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import Input from '../components/ui/Input';
 import Button from '../components/ui/Button';
-import api from '../services/api';
-import { API_ENDPOINTS } from '../config/constants';
+import Switch from '../components/ui/Switch';
 import useAuthStore from '../store/useAuthStore';
 import { useNavigate } from 'react-router-dom';
 
@@ -65,6 +64,8 @@ const ProfileSetup = ({ onSuccess }) => {
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
   const updateUser = useAuthStore((s) => s.updateUser);
+  const updatePrivacyAsync = useAuthStore((s) => s.updatePrivacyAsync);
+  const [savingPrivacy, setSavingPrivacy] = useState(false);
 
   const [state, setState] = useReducer(
     (s, a) => ({ ...s, ...a }),
@@ -110,6 +111,8 @@ const ProfileSetup = ({ onSuccess }) => {
     reader.readAsDataURL(file);
   };
 
+  const updateProfileAsync = useAuthStore((s) => s.updateProfileAsync);
+
   const onSubmit = async () => {
     setState({ submitting: true });
     try {
@@ -117,7 +120,7 @@ const ProfileSetup = ({ onSuccess }) => {
       if (state.avatarFile) payload.avatarBase64 = state.avatarPreview;
       else payload.avatarUrl = state.avatarUrl;
 
-      const { data } = await api.put(API_ENDPOINTS.UPDATE_PROFILE, payload);
+      const { data } = await updateProfileAsync(payload);
       if (data?.success) {
         toast.success('Profile completed');
         updateUser({
@@ -204,6 +207,22 @@ const ProfileSetup = ({ onSuccess }) => {
                     <div className="mt-1 text-xs text-slate-500 text-right">{state.bio.length}/280</div>
                   </div>
                 </Field>
+
+                <div className="grid gap-2">
+                  <div className="text-sm text-[color:var(--fieldText)]">Privacy</div>
+                  <Switch
+                    checked={(user?.visibility || 'public') === 'private'}
+                    onChange={async (checked) => {
+                      const target = checked ? 'private' : 'public';
+                      if ((user?.visibility || 'public') === target) return;
+                      setSavingPrivacy(true);
+                      try { await updatePrivacyAsync(target); } finally { setSavingPrivacy(false); }
+                    }}
+                    labelLeft="Public"
+                    labelRight="Private"
+                    disabled={savingPrivacy}
+                  />
+                </div>
 
                 <div className="flex justify-end">
                   <Button type="button" onClick={onSubmit} disabled={Object.keys(errors).length > 0} loading={state.submitting}>

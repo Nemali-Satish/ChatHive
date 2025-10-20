@@ -21,7 +21,7 @@ export const sendMessage = asyncHandler(async (req, res) => {
   }
 
   // Check if sender is blocked by any recipient
-  const chat = await Chat.findById(chatId).populate('users', 'blockedUsers');
+  const chat = await Chat.findById(chatId).populate('users', 'blockedUsers visibility friends');
   if (!chat) {
     res.status(404);
     throw new Error('Chat not found');
@@ -44,6 +44,20 @@ export const sendMessage = asyncHandler(async (req, res) => {
       if (currentUser.blockedUsers && currentUser.blockedUsers.some(id => id.toString() === chatUser._id.toString())) {
         res.status(403);
         throw new Error('You have blocked this user');
+      }
+    }
+  }
+
+  // Enforce privacy for 1:1 chats: prevent sending to private user unless friends
+  if (!chat.isGroupChat) {
+    const otherUser = chat.users.find((u) => (u._id || u).toString() !== req.user._id.toString());
+    if (otherUser && otherUser.visibility === 'private') {
+      // Load friend's list if not present (in case populate missed)
+      const otherUserFriends = Array.isArray(otherUser.friends) ? otherUser.friends : [];
+      const isFriend = otherUserFriends.some((id) => id.toString() === req.user._id.toString());
+      if (!isFriend) {
+        res.status(403);
+        return res.json({ success: false, code: 'PRIVATE_USER', requiresInvite: true, message: 'User is private. Send invite first.' });
       }
     }
   }
